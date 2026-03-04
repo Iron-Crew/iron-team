@@ -44,6 +44,14 @@ export default function Characters() {
     catch(e){ setErr(e.message) }
   }
 
+  // 🔹 GROUPER LES PERSONNAGES PAR COMPTE
+  const grouped = rows.reduce((acc, c) => {
+    const key = c.account || "Sans compte"
+    if (!acc[key]) acc[key] = []
+    acc[key].push(c)
+    return acc
+  }, {})
+
   return (
     <div className="container">
       <div className="header">
@@ -85,19 +93,35 @@ export default function Characters() {
 
       {loading ? <div className="h-sub">Chargement…</div> : (
         <div className="list">
-          {rows.map(c => (
-            <div key={c.id} className="item" role="button" tabIndex={0} onClick={()=>nav(`/persos/${c.id}`)}>
-              <div>
-                <div className="item-title">{c.name}</div>
-                <div className="item-sub">{[c.clazz, c.level?`Niv ${c.level}`:null, c.account].filter(Boolean).join(' • ') || '—'}</div>
+
+          {Object.keys(grouped).map(account => (
+            <div key={account}>
+
+              <div className="h-sub" style={{margin:"10px 0", fontWeight:"bold"}}>
+                Compte {account}
               </div>
-              <div className="kpi">
-                <Pill tone="violet">Ouvrir</Pill>
-                <button className="btn ghost" onClick={(e)=>{e.stopPropagation(); del(c.id)}}>Suppr</button>
-              </div>
+
+              {grouped[account].map(c => (
+                <div key={c.id} className="item" role="button" tabIndex={0} onClick={()=>nav(`/persos/${c.id}`)}>
+                  <div>
+                    <div className="item-title">{c.name}</div>
+                    <div className="item-sub">
+                      {[c.clazz, c.level?`Niv ${c.level}`:null].filter(Boolean).join(' • ') || '—'}
+                    </div>
+                  </div>
+
+                  <div className="kpi">
+                    <Pill tone="violet">Ouvrir</Pill>
+                    <button className="btn ghost" onClick={(e)=>{e.stopPropagation(); del(c.id)}}>Suppr</button>
+                  </div>
+                </div>
+              ))}
+
             </div>
           ))}
+
           {rows.length===0 && <div className="h-sub">Ajoute ton premier perso.</div>}
+
         </div>
       )}
     </div>
