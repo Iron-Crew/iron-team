@@ -198,7 +198,7 @@ export default function Dofus() {
               <table className="progress-table">
                 <thead>
                   <tr>
-                    <th className="sticky-col sticky-head">Perso</th>
+                    <th className="sticky-col sticky-head"></th>
                     {DOFUS_COLS.map(col => (
                       <th key={col.key} className="icon-head">
                         <img

@@ -130,7 +130,7 @@ export default function Jetons() {
               <table className="progress-table">
                 <thead>
                   <tr>
-                    <th className="sticky-col sticky-head">Perso</th>
+                    <th className="sticky-col sticky-head"></th>
                     {CURRENCY_COLS.map(col => (
                       <th key={col.key} className="text-head" title={col.label}>
                         {col.label}
