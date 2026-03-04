@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { Card } from '../ui'
 import { listCharacters, listProgress, upsertProgress, clearProgress } from '../data'
 
-// Colonnes JETONS / monnaies — tu pourras modifier après
 const CURRENCY_COLS = [
   { key: 'KOLIZETONS', label: 'KOLIZÉTONS' },
   { key: 'ROSES_DES_SABLES', label: 'ROSES DES SABLES' },
@@ -50,7 +49,6 @@ export default function Jetons() {
 
   useEffect(() => { refresh() }, [])
 
-  // Map: character_id -> currencyKey -> value_int
   const progMap = useMemo(() => {
     const m = {}
     for (const r of (prog || [])) {
@@ -60,7 +58,6 @@ export default function Jetons() {
     return m
   }, [prog])
 
-  // Group by account
   const grouped = useMemo(() => {
     const map = {}
     for (const c of rows) {
@@ -68,14 +65,12 @@ export default function Jetons() {
       if (!map[key]) map[key] = []
       map[key].push(c)
     }
-    // sort accounts 1..6 then others
     const keys = []
     for (let i = 1; i <= 6; i++) if (map[String(i)]?.length) keys.push(String(i))
     if (map['Sans compte']?.length) keys.push('Sans compte')
     for (const k of Object.keys(map).sort((a, b) => a.localeCompare(b, 'fr'))) {
       if (!keys.includes(k)) keys.push(k)
     }
-    // sort characters by name inside
     keys.forEach(k => map[k].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'fr')))
     return { map, keys }
   }, [rows])
@@ -84,14 +79,13 @@ export default function Jetons() {
     setSavingKey(`${character_id}:${currencyKey}`)
     try {
       if (nextValueInt === null || nextValueInt === 0) {
-        // on garde la DB clean : 0 => on supprime la ligne
         await clearProgress({ character_id, category: 'currency', key: currencyKey })
       } else {
         await upsertProgress({
           character_id,
           category: 'currency',
           key: currencyKey,
-          status: 'done', // pas utilisé ici, mais on met une valeur stable
+          status: 'done',
           value_int: nextValueInt,
         })
       }
@@ -112,8 +106,8 @@ export default function Jetons() {
     <div className="container">
       <div className="header">
         <div>
-          <div className="h-title">Jetons</div>
-          <div className="h-sub">Quantités (0 = vide). Boutons - / + ou saisie directe.</div>
+          <div className="h-title">Monnaies</div>
+          <div className="h-sub">Quantités (0 = vide). Boutons -10 / +10 ou saisie directe.</div>
         </div>
       </div>
 
@@ -132,13 +126,13 @@ export default function Jetons() {
               Compte {acc}
             </div>
 
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 8, minWidth: 900 }}>
+            <div className="table-wrap">
+              <table className="progress-table">
                 <thead>
                   <tr>
-                    <th style={{ textAlign: 'left', whiteSpace: 'nowrap', padding: 6 }}>Perso</th>
+                    <th className="sticky-col sticky-head">Perso</th>
                     {CURRENCY_COLS.map(col => (
-                      <th key={col.key} style={{ textAlign: 'center', whiteSpace: 'nowrap', padding: 6 }}>
+                      <th key={col.key} className="text-head" title={col.label}>
                         {col.label}
                       </th>
                     ))}
@@ -148,8 +142,8 @@ export default function Jetons() {
                 <tbody>
                   {grouped.map[acc].map(c => (
                     <tr key={c.id}>
-                      <td style={{ whiteSpace: 'nowrap', padding: 6 }}>
-                        <div style={{ fontWeight: 700 }}>{c.name}</div>
+                      <td className="sticky-col sticky-cell">
+                        <div style={{ fontWeight: 900 }}>{c.name}</div>
                         <div className="h-sub" style={{ marginTop: 2 }}>
                           {[c.clazz, c.level ? `Niv ${c.level}` : null].filter(Boolean).join(' • ') || '—'}
                         </div>
@@ -161,7 +155,7 @@ export default function Jetons() {
                         const display = (val ?? 0) === 0 ? '' : String(val)
 
                         return (
-                          <td key={col.key} style={{ textAlign: 'center', padding: 6 }}>
+                          <td key={col.key} className="cell">
                             <div style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'center' }}>
                               <button
                                 type="button"
@@ -188,15 +182,10 @@ export default function Jetons() {
                                 disabled={!!savingKey}
                                 onChange={(e) => {
                                   const next = clampInt(e.target.value)
-                                  // UX: laisse taper, mais on clamp quand même
-                                  // Si vide => null (sera sauvegardé quand blur)
-                                  // On n'écrit pas en DB à chaque frappe, on stocke local via setProg hack-free:
-                                  // simple: on met à jour le progMap via setProg avec une copie
                                   const cid = c.id
                                   const key = col.key
                                   setProg(prev => {
                                     const nextArr = Array.isArray(prev) ? [...prev] : []
-                                    // trouver la ligne existante
                                     const idx = nextArr.findIndex(r => r.character_id === cid && r.category === 'currency' && r.key === key)
                                     if (idx >= 0) {
                                       nextArr[idx] = { ...nextArr[idx], value_int: next }

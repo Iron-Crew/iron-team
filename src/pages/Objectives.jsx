@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { Card } from '../ui'
 import { listCharacters, listProgress, upsertProgress, clearProgress } from '../data'
 
-// Colonnes OBJECTIFS — modifiable facilement
 const OBJECTIVES_COLS = [
   { key: 'TUTU', label: 'TUTU' },
   { key: 'OCRE', label: 'OCRE' },
@@ -26,7 +25,6 @@ function normalizeAccount(a) {
 }
 
 function nextStatus(current) {
-  // cycle: none -> in_progress -> done -> none
   if (!current || current === 'none') return 'in_progress'
   if (current === 'in_progress') return 'done'
   return 'none'
@@ -40,11 +38,10 @@ function cellVisual(status) {
       style: { background: 'rgba(140, 88, 255, 0.14)', borderColor: 'rgba(140, 88, 255, 0.35)' },
     }
   }
-  // done
   return {
     text: '✓',
     style: { background: 'rgba(34, 197, 94, 0.14)', borderColor: 'rgba(34, 197, 94, 0.35)' },
-    }
+  }
 }
 
 export default function Objectives() {
@@ -72,7 +69,6 @@ export default function Objectives() {
 
   useEffect(() => { refresh() }, [])
 
-  // Map: character_id -> objectiveKey -> status
   const progMap = useMemo(() => {
     const m = {}
     for (const r of (prog || [])) {
@@ -82,7 +78,6 @@ export default function Objectives() {
     return m
   }, [prog])
 
-  // Group by account
   const grouped = useMemo(() => {
     const map = {}
     for (const c of rows) {
@@ -90,14 +85,12 @@ export default function Objectives() {
       if (!map[key]) map[key] = []
       map[key].push(c)
     }
-    // sort accounts 1..6 then others
     const keys = []
     for (let i = 1; i <= 6; i++) if (map[String(i)]?.length) keys.push(String(i))
     if (map['Sans compte']?.length) keys.push('Sans compte')
     for (const k of Object.keys(map).sort((a, b) => a.localeCompare(b, 'fr'))) {
       if (!keys.includes(k)) keys.push(k)
     }
-    // sort characters by name inside
     keys.forEach(k => map[k].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'fr')))
     return { map, keys }
   }, [rows])
@@ -120,7 +113,6 @@ export default function Objectives() {
           value_int: null,
         })
       }
-      // refresh progress only (faster)
       setProg(await listProgress('todo'))
     } catch (e) {
       setErr(e.message)
@@ -153,13 +145,13 @@ export default function Objectives() {
               Compte {acc}
             </div>
 
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 8, minWidth: 900 }}>
+            <div className="table-wrap">
+              <table className="progress-table">
                 <thead>
                   <tr>
-                    <th style={{ textAlign: 'left', whiteSpace: 'nowrap', padding: 6 }}>Perso</th>
+                    <th className="sticky-col sticky-head">Perso</th>
                     {OBJECTIVES_COLS.map(col => (
-                      <th key={col.key} style={{ textAlign: 'center', whiteSpace: 'nowrap', padding: 6 }}>
+                      <th key={col.key} className="text-head" title={col.label}>
                         {col.label}
                       </th>
                     ))}
@@ -169,8 +161,8 @@ export default function Objectives() {
                 <tbody>
                   {grouped.map[acc].map(c => (
                     <tr key={c.id}>
-                      <td style={{ whiteSpace: 'nowrap', padding: 6 }}>
-                        <div style={{ fontWeight: 700 }}>{c.name}</div>
+                      <td className="sticky-col sticky-cell">
+                        <div style={{ fontWeight: 900 }}>{c.name}</div>
                         <div className="h-sub" style={{ marginTop: 2 }}>
                           {[c.clazz, c.level ? `Niv ${c.level}` : null].filter(Boolean).join(' • ') || '—'}
                         </div>
@@ -182,7 +174,7 @@ export default function Objectives() {
                         const busy = savingKey === `${c.id}:${col.key}`
 
                         return (
-                          <td key={col.key} style={{ textAlign: 'center', padding: 6 }}>
+                          <td key={col.key} className="cell">
                             <button
                               type="button"
                               className="btn ghost"
@@ -194,7 +186,7 @@ export default function Objectives() {
                                 height: 34,
                                 borderRadius: 10,
                                 border: '1px solid rgba(0,0,0,0.10)',
-                                fontWeight: 800,
+                                fontWeight: 900,
                                 ...v.style,
                                 opacity: busy ? 0.6 : 1,
                               }}

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { Card } from '../ui'
 import { listCharacters, listProgress, upsertProgress, clearProgress } from '../data'
 
-// Colonnes DOFUS (29) — exactement comme ton Excel
+// Colonnes DOFUS (29)
 const DOFUS_COLS = [
   { key: 'DOFAWA', label: 'DOFAWA' },
   { key: 'ARGENTE', label: 'ARGENTE' },
@@ -35,13 +35,45 @@ const DOFUS_COLS = [
   { key: 'CACAO', label: 'CACAO' },
 ]
 
+// Mapping vers les icônes (public/dofus-icons/*.png)
+const DOFUS_ICONS = {
+  DOFAWA: '/dofus-icons/dofawa.png',
+  ARGENTE: '/dofus-icons/argente.png',
+  CAWOTTE: '/dofus-icons/cawotte.png',
+  DOKOKO: '/dofus-icons/dokoko.png',
+  VEILLEURS: '/dofus-icons/veilleurs.png',
+  EMERAUDE: '/dofus-icons/emeraude.png',
+  POURPRE: '/dofus-icons/pourpre.png',
+  DOMAKURO: '/dofus-icons/domakuro.png',
+  DORIGAMI: '/dofus-icons/dorigami.png',
+  GLACES: '/dofus-icons/glaces.png',
+  VULBIS: '/dofus-icons/vulbis.png',
+  TURQUOISE: '/dofus-icons/turquoise.png',
+  OCRE: '/dofus-icons/ocre.png',
+  ABYSSAL: '/dofus-icons/abyssal.png',
+  TACHETE: '/dofus-icons/tachete.png',
+  NEBULEUX: '/dofus-icons/nebuleux.png',
+  FORGELAVE: '/dofus-icons/forgelave.png',
+  CAUCHEMAR: '/dofus-icons/cauchemar.png',
+  IVOIRE: '/dofus-icons/ivoire.png',
+  EBENE: '/dofus-icons/ebene.png',
+  ARGENTE_SCINTILLANT: '/dofus-icons/argente_scintillant.png',
+  DOM_DE_PIN: '/dofus-icons/dom_de_pin.png',
+  SYLVESTRE: '/dofus-icons/sylvestre.png',
+  DOFOOZBZ: '/dofus-icons/dofoozbz.png',
+  DOLMANAX: '/dofus-icons/dolmanax.png',
+  KALIPTUS: '/dofus-icons/kaliptus.png',
+  DOTRUCHE: '/dofus-icons/dotruche.png',
+  DOKILLE: '/dofus-icons/dokille.png',
+  CACAO: '/dofus-icons/cacao.png',
+}
+
 function normalizeAccount(a) {
   const s = (a ?? '').toString().trim()
   return s || 'Sans compte'
 }
 
 function nextStatus(current) {
-  // cycle: none -> in_progress -> done -> none
   if (!current || current === 'none') return 'in_progress'
   if (current === 'in_progress') return 'done'
   return 'none'
@@ -55,7 +87,6 @@ function cellVisual(status) {
       style: { background: 'rgba(140, 88, 255, 0.14)', borderColor: 'rgba(140, 88, 255, 0.35)' },
     }
   }
-  // done
   return {
     text: '✓',
     style: { background: 'rgba(34, 197, 94, 0.14)', borderColor: 'rgba(34, 197, 94, 0.35)' },
@@ -87,7 +118,6 @@ export default function Dofus() {
 
   useEffect(() => { refresh() }, [])
 
-  // Map: character_id -> dofusKey -> status
   const progMap = useMemo(() => {
     const m = {}
     for (const r of (prog || [])) {
@@ -97,7 +127,6 @@ export default function Dofus() {
     return m
   }, [prog])
 
-  // Group by account
   const grouped = useMemo(() => {
     const map = {}
     for (const c of rows) {
@@ -105,15 +134,13 @@ export default function Dofus() {
       if (!map[key]) map[key] = []
       map[key].push(c)
     }
-    // sort accounts 1..6 then others
     const keys = []
     for (let i = 1; i <= 6; i++) if (map[String(i)]?.length) keys.push(String(i))
     if (map['Sans compte']?.length) keys.push('Sans compte')
-    for (const k of Object.keys(map).sort((a,b)=>a.localeCompare(b,'fr'))) {
+    for (const k of Object.keys(map).sort((a, b) => a.localeCompare(b, 'fr'))) {
       if (!keys.includes(k)) keys.push(k)
     }
-    // sort characters by name inside
-    keys.forEach(k => map[k].sort((a,b)=>(a.name||'').localeCompare(b.name||'','fr')))
+    keys.forEach(k => map[k].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'fr')))
     return { map, keys }
   }, [rows])
 
@@ -135,7 +162,6 @@ export default function Dofus() {
           value_int: null,
         })
       }
-      // refresh progress only (faster)
       setProg(await listProgress('dofus'))
     } catch (e) {
       setErr(e.message)
@@ -168,14 +194,20 @@ export default function Dofus() {
               Compte {acc}
             </div>
 
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 8, minWidth: 900 }}>
+            <div className="table-wrap">
+              <table className="progress-table">
                 <thead>
                   <tr>
-                    <th style={{ textAlign: 'left', whiteSpace: 'nowrap', padding: 6 }}>Perso</th>
+                    <th className="sticky-col sticky-head">Perso</th>
                     {DOFUS_COLS.map(col => (
-                      <th key={col.key} style={{ textAlign: 'center', whiteSpace: 'nowrap', padding: 6 }}>
-                        {col.label}
+                      <th key={col.key} className="icon-head">
+                        <img
+                          src={DOFUS_ICONS[col.key]}
+                          alt={col.label}
+                          title={col.label}
+                          className="dofus-icon"
+                          loading="lazy"
+                        />
                       </th>
                     ))}
                   </tr>
@@ -184,8 +216,8 @@ export default function Dofus() {
                 <tbody>
                   {grouped.map[acc].map(c => (
                     <tr key={c.id}>
-                      <td style={{ whiteSpace: 'nowrap', padding: 6 }}>
-                        <div style={{ fontWeight: 700 }}>{c.name}</div>
+                      <td className="sticky-col sticky-cell">
+                        <div style={{ fontWeight: 900 }}>{c.name}</div>
                         <div className="h-sub" style={{ marginTop: 2 }}>
                           {[c.clazz, c.level ? `Niv ${c.level}` : null].filter(Boolean).join(' • ') || '—'}
                         </div>
@@ -197,7 +229,7 @@ export default function Dofus() {
                         const busy = savingKey === `${c.id}:${col.key}`
 
                         return (
-                          <td key={col.key} style={{ textAlign: 'center', padding: 6 }}>
+                          <td key={col.key} className="cell">
                             <button
                               type="button"
                               className="btn ghost"
@@ -209,7 +241,7 @@ export default function Dofus() {
                                 height: 34,
                                 borderRadius: 10,
                                 border: '1px solid rgba(0,0,0,0.10)',
-                                fontWeight: 800,
+                                fontWeight: 900,
                                 ...v.style,
                                 opacity: busy ? 0.6 : 1,
                               }}

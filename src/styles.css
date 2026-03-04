@@ -54,3 +54,62 @@ body{
 .segmented{display:flex;background:#fff;border:1px solid var(--border);border-radius:14px;overflow:hidden;}
 .seg-btn{flex:1;padding:10px 10px;background:transparent;border:none;font-weight:900;color:var(--muted);cursor:pointer;}
 .seg-btn.active{background:rgba(124,58,237,.10);color:var(--violet);}
+
+/* Tables (Dofus / Objectifs / Monnaies) */
+.table-wrap{
+  overflow-x:auto;
+  -webkit-overflow-scrolling:touch;
+}
+
+.progress-table{
+  width:100%;
+  border-collapse:separate;
+  border-spacing:8px;
+  min-width: 980px;
+}
+
+.cell{
+  text-align:center;
+  padding:6px;
+  white-space:nowrap;
+}
+
+.text-head{
+  text-align:center;
+  white-space:nowrap;
+  padding:6px;
+  font-size:12px;
+  color: var(--muted);
+}
+
+.icon-head{
+  text-align:center;
+  padding:6px;
+  width:56px;
+  min-width:56px;
+}
+
+.dofus-icon{
+  width:28px;
+  height:28px;
+  object-fit:contain;
+  display:inline-block;
+}
+
+.sticky-col{
+  position: sticky;
+  left: 0;
+  background: var(--card);
+  z-index: 2;
+}
+
+.sticky-head{
+  z-index: 4;
+}
+
+.sticky-cell{
+  min-width: 210px;
+  max-width: 210px;
+  width: 210px;
+  box-shadow: 10px 0 18px rgba(31,36,48,.06);
+}
