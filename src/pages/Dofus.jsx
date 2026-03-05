@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Card, Segmented } from '../ui'
-import { listCharacters, listProgress, upsertProgress, clearProgress } from '../data'
+import { listCharacters, listProgress, upsertProgress } from '../data'
 
-// Colonnes DOFUS (29)
+// Colonnes DOFUS
 const DOFUS_COLS = [
   { key: 'DOFAWA', label: 'DOFAWA' },
   { key: 'ARGENTE', label: 'ARGENTE' },
@@ -35,7 +35,7 @@ const DOFUS_COLS = [
   { key: 'CACAO', label: 'CACAO' },
 ]
 
-// Mapping vers les icônes (public/dofus-icons/*.png)
+// Mapping icônes (public/dofus-icons/*.png)
 const DOFUS_ICONS = {
   DOFAWA: '/dofus-icons/dofawa.png',
   ARGENTE: '/dofus-icons/argente.png',
@@ -73,25 +73,26 @@ function normalizeAccount(a) {
   return s || 'Sans compte'
 }
 
-// Cycle : vide -> O -> ✓ -> vide
-function nextStatus(current) {
-  if (!current || current === 'none') return 'in_progress'
-  if (current === 'in_progress') return 'done'
-  return 'none'
+// ✅ EXACT comme Persos : 0(vide) -> 1(X) -> 2(O) -> 0
+function nextTriInt(v) {
+  const n = Number(v) || 0
+  if (n === 0) return 1
+  if (n === 1) return 2
+  return 0
 }
 
-function cellVisual(status) {
-  if (!status || status === 'none') return { text: '', style: {} }
-  if (status === 'in_progress') {
-    return {
-      text: 'O',
-      style: { background: 'rgba(140, 88, 255, 0.14)', borderColor: 'rgba(140, 88, 255, 0.35)' },
-    }
-  }
-  return {
-    text: '✓',
-    style: { background: 'rgba(34, 197, 94, 0.14)', borderColor: 'rgba(34, 197, 94, 0.35)' },
-  }
+function triLabel(v) {
+  const n = Number(v) || 0
+  if (n === 1) return 'X'
+  if (n === 2) return 'O'
+  return ''
+}
+
+function triBg(v) {
+  const n = Number(v) || 0
+  if (n === 1) return 'rgba(34,197,94,0.25)'   // vert clair
+  if (n === 2) return 'rgba(245,158,11,0.25)'  // ocre
+  return 'white'
 }
 
 export default function Dofus() {
@@ -102,13 +103,10 @@ export default function Dofus() {
   const [err, setErr] = useState(null)
   const [savingCount, setSavingCount] = useState(0)
 
-  const [accountFilter, setAccountFilter] = useState('ALL') // ALL, 1..6
-  const [classFilter, setClassFilter] = useState('ALL') // ALL or clazz
+  const [accountFilter, setAccountFilter] = useState('ALL')
+  const [classFilter, setClassFilter] = useState('ALL')
 
-  // stocke les cellules en cours de save (pour un petit "…" local)
-  const savingCellsRef = useRef(new Set())
-  const [, forceTick] = useState(0)
-  const bump = () => forceTick(x => x + 1)
+  const timersRef = useRef(new Map())
 
   async function refresh() {
     setLoading(true)
@@ -127,9 +125,15 @@ export default function Dofus() {
     }
   }
 
-  useEffect(() => { refresh() }, [])
+  useEffect(() => {
+    refresh()
+    return () => {
+      for (const t of timersRef.current.values()) clearTimeout(t)
+      timersRef.current.clear()
+    }
+  }, [])
 
-  // Map robuste : si doublons, garde le plus récent via updated_at
+  // Map robuste : si doublons, garde la plus récente via updated_at
   const progMap = useMemo(() => {
     const m = {}
     for (const r of (prog || [])) {
@@ -139,7 +143,7 @@ export default function Dofus() {
 
       if (!m[cid]) m[cid] = {}
       const prev = m[cid][key]
-      const curr = { status: r.status || 'none', updated_at: r.updated_at || '' }
+      const curr = { value_int: r.value_int ?? 0, updated_at: r.updated_at ?? '' }
 
       if (!prev) m[cid][key] = curr
       else {
@@ -152,7 +156,7 @@ export default function Dofus() {
     const out = {}
     for (const cid of Object.keys(m)) {
       out[cid] = {}
-      for (const key of Object.keys(m[cid])) out[cid][key] = m[cid][key].status
+      for (const key of Object.keys(m[cid])) out[cid][key] = m[cid][key].value_int ?? 0
     }
     return out
   }, [prog])
@@ -202,26 +206,19 @@ export default function Dofus() {
     return list
   }, [filteredRows])
 
-  function upsertLocalStatus(character_id, key, status) {
+  function upsertLocal(character_id, key, value_int) {
     setProg(prev => {
       const next = Array.isArray(prev) ? [...prev] : []
       const idx = next.findIndex(r => r.character_id === character_id && r.category === 'dofus' && r.key === key)
-
-      if (!status || status === 'none') {
-        // enlève la ligne localement
-        if (idx >= 0) next.splice(idx, 1)
-        return next
-      }
-
       if (idx >= 0) {
-        next[idx] = { ...next[idx], status, updated_at: new Date().toISOString() }
+        next[idx] = { ...next[idx], value_int, updated_at: new Date().toISOString() }
       } else {
         next.push({
           character_id,
           category: 'dofus',
           key,
-          status,
-          value_int: null,
+          status: 'done', // peu importe ici, on utilise value_int
+          value_int,
           updated_at: new Date().toISOString(),
         })
       }
@@ -229,44 +226,36 @@ export default function Dofus() {
     })
   }
 
-  async function saveCell(character_id, key, next) {
-    const cellKey = `${character_id}:${key}`
-    savingCellsRef.current.add(cellKey)
+  async function saveNow(character_id, key, value_int) {
     setSavingCount(x => x + 1)
     setErr(null)
-    bump()
-
     try {
-      if (next === 'none') {
-        await clearProgress({ character_id, category: 'dofus', key })
-      } else {
-        await upsertProgress({
-          character_id,
-          category: 'dofus',
-          key,
-          status: next,
-          value_int: null,
-        })
-      }
+      await upsertProgress({
+        character_id,
+        category: 'dofus',
+        key,
+        status: 'done',
+        value_int: value_int ?? 0,
+      })
     } catch (e) {
-      setErr(e.message)
-      // en cas d’erreur, on re-sync
-      await refresh()
+      console.error(e)
+      setErr(`Sauvegarde refusée: ${e.message}`)
     } finally {
-      savingCellsRef.current.delete(cellKey)
       setSavingCount(x => Math.max(0, x - 1))
-      bump()
     }
   }
 
-  async function toggleCell(character_id, dofusKey) {
-    const current = progMap?.[character_id]?.[dofusKey] || 'none'
-    const next = nextStatus(current)
+  function saveDebounced(character_id, key, value_int) {
+    const timerKey = `${character_id}:${key}`
+    const prev = timersRef.current.get(timerKey)
+    if (prev) clearTimeout(prev)
 
-    // Optimistic UI instant
-    upsertLocalStatus(character_id, dofusKey, next)
-    // Save async
-    saveCell(character_id, dofusKey, next)
+    const t = setTimeout(() => {
+      timersRef.current.delete(timerKey)
+      saveNow(character_id, key, value_int)
+    }, 350)
+
+    timersRef.current.set(timerKey, t)
   }
 
   const accountOptions = useMemo(() => ([
@@ -282,6 +271,63 @@ export default function Dofus() {
   const compactMode = classFilter !== 'ALL'
 
   if (loading) return <div className="container"><div className="h-sub">Chargement…</div></div>
+
+  const TableHeader = () => (
+    <thead>
+      <tr>
+        <th className="sticky-col sticky-head"></th>
+        {DOFUS_COLS.map(col => (
+          <th key={col.key} className="icon-head" title={col.label}>
+            <img
+              src={DOFUS_ICONS[col.key]}
+              alt={col.label}
+              title={col.label}
+              className="dofus-icon"
+              loading="lazy"
+            />
+          </th>
+        ))}
+      </tr>
+    </thead>
+  )
+
+  const Row = ({ c, showAccountHint }) => {
+    const acc = normalizeAccount(c.account)
+    const map = progMap?.[c.id] || {}
+
+    return (
+      <tr key={c.id}>
+        <td className="sticky-col sticky-cell">
+          <div style={{ fontWeight: 900 }}>{c.name}</div>
+          <div className="h-sub" style={{ marginTop: 2 }}>
+            {c.clazz} • <span style={{ color: '#7c3aed', fontWeight: 800 }}>Niv {c.level}</span>
+            {showAccountHint && <span className="account-pill">• Compte {acc}</span>}
+          </div>
+        </td>
+
+        {DOFUS_COLS.map(col => {
+          const v = map[col.key] ?? 0
+          return (
+            <td key={col.key} className="cell">
+              <button
+                type="button"
+                className="tri-btn"
+                onClick={() => {
+                  const next = nextTriInt(v)
+                  upsertLocal(c.id, col.key, next)
+                  saveDebounced(c.id, col.key, next)
+                }}
+                style={{ background: triBg(v) }}
+                title="Vide → X → O"
+              >
+                {triLabel(v)}
+              </button>
+            </td>
+          )
+        })}
+      </tr>
+    )
+  }
 
   return (
     <div className="dofus-page container" style={{ maxWidth: 1750, width: 'calc(100% - 28px)' }}>
@@ -326,14 +372,15 @@ export default function Dofus() {
           filter: drop-shadow(0 1px 0 rgba(0,0,0,0.06));
         }
 
-        .cell-btn{
-          width: 42px;
+        /* ✅ EXACT tailles Persos (Justicier/Parangon) */
+        .tri-btn{
+          width: 72px;
           height: 34px;
           border-radius: 12px;
           border: 1px solid rgba(0,0,0,0.10);
           font-weight: 900;
-          background: white;
           cursor: pointer;
+          background: white;
         }
 
         .account-pill {
@@ -343,7 +390,7 @@ export default function Dofus() {
         }
       `}</style>
 
-      {/* Toolbar (comme Persos) */}
+      {/* Toolbar */}
       <div className="dofus-toolbar">
         <div className="dofus-toolbar-left">
           <Segmented options={accountOptions} value={accountFilter} onChange={setAccountFilter} />
@@ -372,7 +419,7 @@ export default function Dofus() {
         </Card>
       )}
 
-      {/* MODE RÉSULTATS */}
+      {/* Mode Résultats */}
       {compactMode ? (
         <Card className="grid" style={{ marginBottom: 12 }}>
           <div className="h-sub" style={{ fontWeight: 'bold', paddingTop: 4 }}>
@@ -381,63 +428,9 @@ export default function Dofus() {
 
           <div className="table-wrap">
             <table className="progress-table">
-              <thead>
-                <tr>
-                  <th className="sticky-col sticky-head"></th>
-                  {DOFUS_COLS.map(col => (
-                    <th key={col.key} className="icon-head">
-                      <img
-                        src={DOFUS_ICONS[col.key]}
-                        alt={col.label}
-                        title={col.label}
-                        className="dofus-icon"
-                        loading="lazy"
-                      />
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-
+              <TableHeader />
               <tbody>
-                {resultsList.map(c => {
-                  const acc = normalizeAccount(c.account)
-                  return (
-                    <tr key={c.id}>
-                      <td className="sticky-col sticky-cell">
-                        <div style={{ fontWeight: 900 }}>{c.name}</div>
-                        <div className="h-sub" style={{ marginTop: 2 }}>
-                          {c.clazz} • <span style={{ color: '#7c3aed', fontWeight: 800 }}>Niv {c.level}</span>
-                          <span className="account-pill">• Compte {acc}</span>
-                        </div>
-                      </td>
-
-                      {DOFUS_COLS.map(col => {
-                        const st = progMap?.[c.id]?.[col.key] || 'none'
-                        const v = cellVisual(st)
-                        const cellKey = `${c.id}:${col.key}`
-                        const busy = savingCellsRef.current.has(cellKey)
-
-                        return (
-                          <td key={col.key} className="cell">
-                            <button
-                              type="button"
-                              className="cell-btn"
-                              onClick={() => toggleCell(c.id, col.key)}
-                              title={busy ? 'Sauvegarde…' : 'Cliquer (vide → O → ✓ → vide)'}
-                              style={{
-                                ...v.style,
-                                opacity: busy ? 0.65 : 1,
-                              }}
-                            >
-                              {busy ? '…' : v.text}
-                            </button>
-                          </td>
-                        )
-                      })}
-                    </tr>
-                  )
-                })}
-
+                {resultsList.map(c => <Row key={c.id} c={c} showAccountHint />)}
                 {resultsList.length === 0 && (
                   <tr>
                     <td colSpan={DOFUS_COLS.length + 1} className="h-sub" style={{ padding: 6 }}>
@@ -450,7 +443,6 @@ export default function Dofus() {
           </div>
         </Card>
       ) : (
-        /* MODE NORMAL : par comptes */
         grouped.keys.map(acc => (
           <Card key={acc} className="grid" style={{ marginBottom: 12 }}>
             <div className="h-sub" style={{ fontWeight: 'bold' }}>
@@ -459,66 +451,9 @@ export default function Dofus() {
 
             <div className="table-wrap">
               <table className="progress-table">
-                <thead>
-                  <tr>
-                    <th className="sticky-col sticky-head"></th>
-                    {DOFUS_COLS.map(col => (
-                      <th key={col.key} className="icon-head">
-                        <img
-                          src={DOFUS_ICONS[col.key]}
-                          alt={col.label}
-                          title={col.label}
-                          className="dofus-icon"
-                          loading="lazy"
-                        />
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-
+                <TableHeader />
                 <tbody>
-                  {grouped.map[acc].map(c => (
-                    <tr key={c.id}>
-                      <td className="sticky-col sticky-cell">
-                        <div style={{ fontWeight: 900 }}>{c.name}</div>
-                        <div className="h-sub" style={{ marginTop: 2 }}>
-                          {c.clazz} • <span style={{ color: '#7c3aed', fontWeight: 800 }}>Niv {c.level}</span>
-                        </div>
-                      </td>
-
-                      {DOFUS_COLS.map(col => {
-                        const st = progMap?.[c.id]?.[col.key] || 'none'
-                        const v = cellVisual(st)
-                        const cellKey = `${c.id}:${col.key}`
-                        const busy = savingCellsRef.current.has(cellKey)
-
-                        return (
-                          <td key={col.key} className="cell">
-                            <button
-                              type="button"
-                              className="cell-btn"
-                              onClick={() => toggleCell(c.id, col.key)}
-                              title={busy ? 'Sauvegarde…' : 'Cliquer (vide → O → ✓ → vide)'}
-                              style={{
-                                ...v.style,
-                                opacity: busy ? 0.65 : 1,
-                              }}
-                            >
-                              {busy ? '…' : v.text}
-                            </button>
-                          </td>
-                        )
-                      })}
-                    </tr>
-                  ))}
-
-                  {grouped.map[acc].length === 0 && (
-                    <tr>
-                      <td colSpan={DOFUS_COLS.length + 1} className="h-sub" style={{ padding: 6 }}>
-                        Aucun perso dans ce compte.
-                      </td>
-                    </tr>
-                  )}
+                  {grouped.map[acc].map(c => <Row key={c.id} c={c} showAccountHint={false} />)}
                 </tbody>
               </table>
             </div>
