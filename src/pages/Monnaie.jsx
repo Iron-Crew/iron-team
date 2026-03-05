@@ -19,13 +19,6 @@ function onlyDigits(s) {
   return (s ?? '').toString().replace(/[^\d]/g, '')
 }
 
-function parseDigitsToNumber(s) {
-  const d = onlyDigits(s)
-  if (!d) return 0
-  const n = Number(d)
-  return Number.isFinite(n) ? n : 0
-}
-
 function formatSpaces(n) {
   const x = Number(n || 0)
   if (!Number.isFinite(x)) return ''
@@ -48,7 +41,7 @@ export default function Monnaie() {
   const [accountFilter, setAccountFilter] = useState('ALL')
   const [classFilter, setClassFilter] = useState('ALL')
 
-  // Drafts = ce que l’utilisateur tape (non formaté), par input
+  // Draft = ce que l’utilisateur tape (digits ONLY), par input
   const [draft, setDraft] = useState({})
 
   const timersRef = useRef(new Map())
@@ -197,6 +190,7 @@ export default function Monnaie() {
     }
   }
 
+  // ✅ Debounce long => "Google Sheet": on sauvegarde quand tu ARRÊTES de taper
   function saveDebounced(character_id, key, value_int) {
     const timerKey = `money:${character_id}:${key}`
     const prev = timersRef.current.get(timerKey)
@@ -205,8 +199,7 @@ export default function Monnaie() {
     const t = setTimeout(() => {
       timersRef.current.delete(timerKey)
       saveNow(character_id, key, value_int)
-    }, 450)
-
+    }, 1200) // <-- IMPORTANT
     timersRef.current.set(timerKey, t)
   }
 
@@ -239,8 +232,7 @@ export default function Monnaie() {
     const t = setTimeout(() => {
       timersRef.current.delete(timerKey)
       saveBankNow(account, value_int)
-    }, 450)
-
+    }, 1200) // <-- IMPORTANT
     timersRef.current.set(timerKey, t)
   }
 
@@ -294,8 +286,8 @@ export default function Monnaie() {
           const dk = cellKey(c.id, col.key)
 
           // Affichage:
-          // - si l’utilisateur est en train de taper => draft (digits only)
-          // - sinon => valeur formatée (espaces)
+          // - si focus => on affiche draft (digits)
+          // - sinon => valeur formatée
           const displayValue =
             draft[dk] !== undefined
               ? draft[dk]
@@ -307,6 +299,13 @@ export default function Monnaie() {
                 className="money-input"
                 value={displayValue}
                 inputMode="numeric"
+                onFocus={() => {
+                  // ✅ au focus, on passe en mode "digits" (sans espaces)
+                  if (draft[dk] === undefined) {
+                    const init = v > 0 ? String(Math.trunc(v)) : ''
+                    setDraft(prev => ({ ...prev, [dk]: init }))
+                  }
+                }}
                 onChange={(e) => {
                   const digits = onlyDigits(e.target.value)
                   setDraft(prev => ({ ...prev, [dk]: digits }))
@@ -317,7 +316,7 @@ export default function Monnaie() {
                 onBlur={() => {
                   const digits = draft[dk] ?? ''
                   const nextNum = digits ? Number(digits) : 0
-                  // on enlève le draft pour repasser en affichage formaté
+                  // ✅ on enlève le draft => redevient formaté (1 000 000)
                   setDraft(prev => {
                     const n = { ...prev }
                     delete n[dk]
@@ -354,11 +353,15 @@ export default function Monnaie() {
           value={displayValue}
           inputMode="numeric"
           placeholder="0 K"
+          onFocus={() => {
+            if (draft[dk] === undefined) {
+              const init = v > 0 ? String(Math.trunc(v)) : ''
+              setDraft(prev => ({ ...prev, [dk]: init }))
+            }
+          }}
           onChange={(e) => {
             const digits = onlyDigits(e.target.value)
-            // ici on garde le "K" seulement en affichage, pas dans le draft
-            setDraft(prev => ({ ...prev, [dk]: digits ? `${digits}` : '' }))
-
+            setDraft(prev => ({ ...prev, [dk]: digits }))
             const nextNum = digits ? Number(digits) : 0
 
             // update UI locale pour que Total se mette à jour direct
@@ -375,7 +378,7 @@ export default function Monnaie() {
           }}
           onBlur={() => {
             const digits = draft[dk] ?? ''
-            const nextNum = digits ? Number(onlyDigits(digits)) : 0
+            const nextNum = digits ? Number(digits) : 0
             setDraft(prev => {
               const n = { ...prev }
               delete n[dk]
@@ -392,10 +395,7 @@ export default function Monnaie() {
   return (
     <div className="monnaie-page container" style={{ maxWidth: 1750, width: 'calc(100% - 28px)' }}>
       <style>{`
-        .monnaie-toolbar{
-          display:flex; gap:12px; align-items:center; justify-content:space-between;
-          flex-wrap:wrap; margin-bottom:12px;
-        }
+        .monnaie-toolbar{ display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-bottom:12px; }
         .monnaie-toolbar-left{ display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
         .monnaie-toolbar-right{ display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
 
@@ -432,9 +432,7 @@ export default function Monnaie() {
           width:18px; height:18px; object-fit:contain;
           filter: drop-shadow(0 1px 0 rgba(0,0,0,0.06));
         }
-        .bank-label{
-          font-size: 12px; font-weight: 900; color: rgba(0,0,0,0.55);
-        }
+        .bank-label{ font-size: 12px; font-weight: 900; color: rgba(0,0,0,0.55); }
         .bank-input{
           width: 190px;
           height: 34px;
