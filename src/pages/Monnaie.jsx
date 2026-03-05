@@ -19,6 +19,13 @@ function onlyDigits(s) {
   return (s ?? '').toString().replace(/[^\d]/g, '')
 }
 
+function parseDigitsToNumber(s) {
+  const d = onlyDigits(s)
+  if (!d) return 0
+  const n = Number(d)
+  return Number.isFinite(n) ? n : 0
+}
+
 function formatSpaces(n) {
   const x = Number(n || 0)
   if (!Number.isFinite(x)) return ''
@@ -41,7 +48,7 @@ export default function Monnaie() {
   const [accountFilter, setAccountFilter] = useState('ALL')
   const [classFilter, setClassFilter] = useState('ALL')
 
-  // Draft = ce que l’utilisateur tape (digits ONLY), par input
+  // ✅ Draft = ce que tu tapes (digits only). Tant que draft existe => PAS de save.
   const [draft, setDraft] = useState({})
 
   const timersRef = useRef(new Map())
@@ -171,7 +178,7 @@ export default function Monnaie() {
     })
   }
 
-  async function saveNow(character_id, key, value_int) {
+  async function saveMoney(character_id, key, value_int) {
     setSavingCount(x => x + 1)
     setErr(null)
     try {
@@ -190,20 +197,7 @@ export default function Monnaie() {
     }
   }
 
-  // ✅ Debounce long => "Google Sheet": on sauvegarde quand tu ARRÊTES de taper
-  function saveDebounced(character_id, key, value_int) {
-    const timerKey = `money:${character_id}:${key}`
-    const prev = timersRef.current.get(timerKey)
-    if (prev) clearTimeout(prev)
-
-    const t = setTimeout(() => {
-      timersRef.current.delete(timerKey)
-      saveNow(character_id, key, value_int)
-    }, 1200) // <-- IMPORTANT
-    timersRef.current.set(timerKey, t)
-  }
-
-  async function saveBankNow(account, value_int) {
+  async function saveBank(account, value_int) {
     setSavingCount(x => x + 1)
     setErr(null)
     try {
@@ -222,18 +216,6 @@ export default function Monnaie() {
     } finally {
       setSavingCount(x => Math.max(0, x - 1))
     }
-  }
-
-  function saveBankDebounced(account, value_int) {
-    const timerKey = `bank:${account}`
-    const prev = timersRef.current.get(timerKey)
-    if (prev) clearTimeout(prev)
-
-    const t = setTimeout(() => {
-      timersRef.current.delete(timerKey)
-      saveBankNow(account, value_int)
-    }, 1200) // <-- IMPORTANT
-    timersRef.current.set(timerKey, t)
   }
 
   function cellKey(characterId, colKey) {
@@ -272,7 +254,7 @@ export default function Monnaie() {
     const map = progMap?.[c.id] || {}
 
     return (
-      <tr key={c.id}>
+      <tr>
         <td className="sticky-col sticky-cell">
           <div style={{ fontWeight: 900 }}>{c.name}</div>
           <div className="h-sub" style={{ marginTop: 2 }}>
@@ -282,16 +264,15 @@ export default function Monnaie() {
         </td>
 
         {MONEY_COLS.map(col => {
-          const v = Number(map[col.key] ?? 0)
+          const savedVal = Number(map[col.key] ?? 0)
           const dk = cellKey(c.id, col.key)
 
-          // Affichage:
-          // - si focus => on affiche draft (digits)
-          // - sinon => valeur formatée
-          const displayValue =
-            draft[dk] !== undefined
-              ? draft[dk]
-              : (v > 0 ? formatSpaces(v) : '')
+          const isEditing = draft[dk] !== undefined
+          const typedVal = isEditing ? parseDigitsToNumber(draft[dk]) : savedVal
+
+          const displayValue = isEditing
+            ? draft[dk] // digits only while typing
+            : (savedVal > 0 ? formatSpaces(savedVal) : '') // formatted only after blur
 
           return (
             <td key={col.key} className="cell">
@@ -300,31 +281,30 @@ export default function Monnaie() {
                 value={displayValue}
                 inputMode="numeric"
                 onFocus={() => {
-                  // ✅ au focus, on passe en mode "digits" (sans espaces)
                   if (draft[dk] === undefined) {
-                    const init = v > 0 ? String(Math.trunc(v)) : ''
-                    setDraft(prev => ({ ...prev, [dk]: init }))
+                    setDraft(prev => ({ ...prev, [dk]: savedVal > 0 ? String(savedVal) : '' }))
                   }
                 }}
                 onChange={(e) => {
+                  // ✅ AUCUN SAVE ici
                   const digits = onlyDigits(e.target.value)
                   setDraft(prev => ({ ...prev, [dk]: digits }))
-                  const nextNum = digits ? Number(digits) : 0
-                  upsertLocal(c.id, col.key, nextNum)
-                  saveDebounced(c.id, col.key, nextNum)
                 }}
-                onBlur={() => {
+                onBlur={async () => {
+                  // ✅ SEUL MOMENT où on sauve
                   const digits = draft[dk] ?? ''
                   const nextNum = digits ? Number(digits) : 0
-                  // ✅ on enlève le draft => redevient formaté (1 000 000)
+
                   setDraft(prev => {
                     const n = { ...prev }
                     delete n[dk]
                     return n
                   })
-                  saveNow(c.id, col.key, nextNum)
+
+                  upsertLocal(c.id, col.key, nextNum)
+                  await saveMoney(c.id, col.key, nextNum)
                 }}
-                style={{ background: greenIfPositive(v) }}
+                style={{ background: greenIfPositive(typedVal) }}
                 title={col.label}
               />
             </td>
@@ -336,13 +316,15 @@ export default function Monnaie() {
 
   const BankModule = ({ account }) => {
     if (!/^\d+$/.test(String(account))) return null
-    const v = Number(bankMap[String(account)] || 0)
+    const savedVal = Number(bankMap[String(account)] || 0)
     const dk = `BANK:${account}`
 
-    const displayValue =
-      draft[dk] !== undefined
-        ? draft[dk]
-        : (v > 0 ? `${formatSpaces(v)} K` : '')
+    const isEditing = draft[dk] !== undefined
+    const typedVal = isEditing ? parseDigitsToNumber(draft[dk]) : savedVal
+
+    const displayValue = isEditing
+      ? draft[dk] // digits only while typing
+      : (savedVal > 0 ? `${formatSpaces(savedVal)} K` : '')
 
     return (
       <div className="bank-module">
@@ -355,16 +337,25 @@ export default function Monnaie() {
           placeholder="0 K"
           onFocus={() => {
             if (draft[dk] === undefined) {
-              const init = v > 0 ? String(Math.trunc(v)) : ''
-              setDraft(prev => ({ ...prev, [dk]: init }))
+              setDraft(prev => ({ ...prev, [dk]: savedVal > 0 ? String(savedVal) : '' }))
             }
           }}
           onChange={(e) => {
+            // ✅ AUCUN SAVE ici
             const digits = onlyDigits(e.target.value)
             setDraft(prev => ({ ...prev, [dk]: digits }))
+          }}
+          onBlur={async () => {
+            const digits = draft[dk] ?? ''
             const nextNum = digits ? Number(digits) : 0
 
-            // update UI locale pour que Total se mette à jour direct
+            setDraft(prev => {
+              const n = { ...prev }
+              delete n[dk]
+              return n
+            })
+
+            // update local pour total direct après blur
             setBanks(prev => {
               const next = Array.isArray(prev) ? [...prev] : []
               const idx = next.findIndex(x => String(x.account) === String(account))
@@ -374,18 +365,9 @@ export default function Monnaie() {
               return next
             })
 
-            saveBankDebounced(String(account), nextNum)
+            await saveBank(String(account), nextNum)
           }}
-          onBlur={() => {
-            const digits = draft[dk] ?? ''
-            const nextNum = digits ? Number(digits) : 0
-            setDraft(prev => {
-              const n = { ...prev }
-              delete n[dk]
-              return n
-            })
-            saveBankNow(String(account), nextNum)
-          }}
+          style={{ background: greenIfPositive(typedVal) }}
           title={`Banque Compte ${account}`}
         />
       </div>
@@ -457,6 +439,12 @@ export default function Monnaie() {
           font-weight: 900;
         }
         .total-bank .val{ color: rgba(0,0,0,0.75); }
+
+        .account-pill {
+          color: rgba(0,0,0,0.45);
+          font-weight: 800;
+          margin-left: 8px;
+        }
       `}</style>
 
       <div className="monnaie-toolbar">
@@ -530,7 +518,7 @@ export default function Monnaie() {
               <table className="progress-table">
                 <TableHeader />
                 <tbody>
-                  {grouped.map[acc].map(c => <Row key={c.id} c={c} showAccountHint={false} />)}
+                  {(grouped.map[acc] || []).map(c => <Row key={c.id} c={c} showAccountHint={false} />)}
                 </tbody>
               </table>
             </div>
