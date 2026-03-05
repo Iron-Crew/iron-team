@@ -87,13 +87,12 @@ export default function Characters() {
   useEffect(() => {
     refresh()
     return () => {
-      // cleanup timers
       for (const t of timersRef.current.values()) clearTimeout(t)
       timersRef.current.clear()
     }
   }, [])
 
-  // Map des valeurs (robuste : si jamais plusieurs lignes existent, on prend la plus récente via updated_at)
+  // Robuste : si jamais plusieurs lignes existent, on garde la plus récente (updated_at)
   const progMap = useMemo(() => {
     const m = {}
     for (const r of (prog || [])) {
@@ -108,13 +107,10 @@ export default function Characters() {
       } else {
         const a = String(prev.updated_at || '')
         const b = String(r.updated_at || '')
-        if (b >= a) {
-          m[cid][key] = { value_int: r.value_int ?? null, updated_at: r.updated_at ?? '' }
-        }
+        if (b >= a) m[cid][key] = { value_int: r.value_int ?? null, updated_at: r.updated_at ?? '' }
       }
     }
 
-    // on ne garde que value_int pour l’UI
     const out = {}
     for (const cid of Object.keys(m)) {
       out[cid] = {}
@@ -146,7 +142,6 @@ export default function Characters() {
       map[key].push(c)
     }
 
-    // ordre “Compte 1..6” puis Sans compte puis le reste
     const keys = []
     for (let i = 1; i <= 6; i++) if (map[String(i)]?.length) keys.push(String(i))
     if (map['Sans compte']?.length) keys.push('Sans compte')
@@ -203,23 +198,22 @@ export default function Characters() {
     timersRef.current.set(timerKey, t)
   }
 
-  const accountOptions = useMemo(() => {
-    return [
-      { value: 'ALL', label: 'Tout' },
-      { value: '1', label: 'Compte 1' },
-      { value: '2', label: 'Compte 2' },
-      { value: '3', label: 'Compte 3' },
-      { value: '4', label: 'Compte 4' },
-      { value: '5', label: 'Compte 5' },
-      { value: '6', label: 'Compte 6' },
-    ]
-  }, [])
+  const accountOptions = useMemo(() => ([
+    { value: 'ALL', label: 'Tout' },
+    { value: '1', label: 'Compte 1' },
+    { value: '2', label: 'Compte 2' },
+    { value: '3', label: 'Compte 3' },
+    { value: '4', label: 'Compte 4' },
+    { value: '5', label: 'Compte 5' },
+    { value: '6', label: 'Compte 6' },
+  ]), [])
 
   if (loading) return <div className="container"><div className="h-sub">Chargement…</div></div>
 
   return (
-    <div className="container" style={{ maxWidth: 1700, width: 'calc(100% - 28px)' }}>
+    <div className="persos-page container" style={{ maxWidth: 1750, width: 'calc(100% - 28px)' }}>
       <style>{`
+        /* Layout toolbar */
         .persos-toolbar{
           display:flex;
           gap:12px;
@@ -234,6 +228,8 @@ export default function Characters() {
           align-items:center;
           flex-wrap:wrap;
         }
+
+        /* Select */
         .persos-select{
           height:38px;
           border-radius:12px;
@@ -247,16 +243,27 @@ export default function Characters() {
           border-color: rgba(124,58,237,0.55);
           box-shadow: 0 0 0 4px rgba(124,58,237,0.12);
         }
+
+        /* Icons headers */
         .persos-head-icon{
           width:22px;
           height:22px;
           vertical-align:middle;
           filter: drop-shadow(0 1px 0 rgba(0,0,0,0.06));
         }
+
+        /* Compaction vertical (le point que tu as marqué en rouge) */
+        .persos-page .card.grid{ padding-bottom: 8px; }
+        .persos-page .progress-table td{
+          padding-top: 10px;
+          padding-bottom: 10px;
+        }
+
+        /* Inputs / buttons compacts */
         .stat-input{
           width: 92px;
-          height: 38px;
-          border-radius: 14px;
+          height: 34px;
+          border-radius: 12px;
           border: 1px solid rgba(0,0,0,0.10);
           text-align: center;
           font-weight: 900;
@@ -269,8 +276,8 @@ export default function Characters() {
         }
         .tri-btn{
           width: 72px;
-          height: 38px;
-          border-radius: 14px;
+          height: 34px;
+          border-radius: 12px;
           border: 1px solid rgba(0,0,0,0.10);
           font-weight: 900;
           cursor: pointer;
@@ -365,12 +372,10 @@ export default function Characters() {
                               onChange={(e) => {
                                 const next = clampNullableInt(e.target.value)
                                 upsertLocal(c.id, col.key, next)
-                                // save pendant la frappe (debounce)
                                 saveDebounced(c.id, col.key, next)
                               }}
                               onBlur={(e) => {
                                 const next = clampNullableInt(e.target.value)
-                                // sécurité : force une save au blur aussi
                                 saveNow(c.id, col.key, next)
                               }}
                               style={{ background: ok ? 'rgba(34,197,94,0.25)' : 'white' }}
