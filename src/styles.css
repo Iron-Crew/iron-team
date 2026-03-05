@@ -116,3 +116,18 @@ body{
   width: 210px;
   box-shadow: 10px 0 18px rgba(31,36,48,.06);
 }
+
+/* ✅ Bottom nav: icônes PNG + séparateurs */
+.nav-icon-img{
+  width:22px;
+  height:22px;
+  object-fit:contain;
+  display:block;
+}
+
+.nav-divider{
+  width:1px;
+  height:26px;
+  background:rgba(31,36,48,.12);
+  align-self:center;
+}

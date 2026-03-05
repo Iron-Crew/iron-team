@@ -19,16 +19,19 @@ export function Pill({ children, tone = 'violet' }) {
 export function BottomNav({ tabs, current, onChange }) {
   return (
     <nav className="bottom-nav">
-      {tabs.map(t => (
-        <button
-          key={t.key}
-          className={'nav-item ' + (current === t.key ? 'active' : '')}
-          onClick={() => onChange(t.key)}
-          aria-label={t.label}
-        >
-          <div className="nav-icon">{t.icon}</div>
-          <div className="nav-label">{t.label}</div>
-        </button>
+      {tabs.map((t,i) => (
+        <React.Fragment key={t.key}>
+          <button
+            className={'nav-item ' + (current === t.key ? 'active' : '')}
+            onClick={() => onChange(t.key)}
+            aria-label={t.label}
+          >
+            <img className="nav-icon-img" src={t.icon} />
+            <div className="nav-label">{t.label}</div>
+          </button>
+
+          {i < tabs.length-1 && <div className="nav-divider"></div>}
+        </React.Fragment>
       ))}
     </nav>
   )
