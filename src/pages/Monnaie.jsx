@@ -19,7 +19,7 @@ function onlyDigits(s) {
   return (s ?? '').toString().replace(/[^\d]/g, '')
 }
 
-function parseDigitsToNumber(s) {
+function toNumberDigits(s) {
   const d = onlyDigits(s)
   if (!d) return 0
   const n = Number(d)
@@ -36,6 +36,82 @@ function greenIfPositive(v) {
   return Number(v) > 0 ? 'rgba(34,197,94,0.25)' : 'white'
 }
 
+const TableHeader = React.memo(function TableHeader() {
+  return (
+    <thead>
+      <tr>
+        <th className="sticky-col sticky-head"></th>
+        {MONEY_COLS.map(col => (
+          <th key={col.key} className="icon-head" title={col.label}>
+            <img src={col.icon} alt={col.label} title={col.label} className="dofus-icon" loading="lazy" />
+          </th>
+        ))}
+      </tr>
+    </thead>
+  )
+})
+
+const MoneyRow = React.memo(function MoneyRow({
+  c,
+  showAccountHint,
+  valueMapForChar,
+  onCommitMoney, // (character_id, key, value_int) => Promise<void>
+}) {
+  const acc = normalizeAccount(c.account)
+
+  function handleMoneyFocus(e, savedVal) {
+    // au focus => digits (sans espaces)
+    e.target.value = savedVal > 0 ? String(Math.trunc(savedVal)) : ''
+  }
+
+  function handleMoneyInput(e) {
+    // pendant la saisie : on laisse le navigateur gérer le focus
+    // on force digits-only sans setState
+    const digits = onlyDigits(e.target.value)
+    if (e.target.value !== digits) e.target.value = digits
+    e.target.style.background = digits && Number(digits) > 0 ? 'rgba(34,197,94,0.25)' : 'white'
+  }
+
+  async function handleMoneyBlur(e, characterId, key) {
+    const nextNum = toNumberDigits(e.target.value)
+    // format après saisie
+    e.target.value = nextNum > 0 ? formatSpaces(nextNum) : ''
+    e.target.style.background = greenIfPositive(nextNum)
+    await onCommitMoney(characterId, key, nextNum)
+  }
+
+  return (
+    <tr>
+      <td className="sticky-col sticky-cell">
+        <div style={{ fontWeight: 900 }}>{c.name}</div>
+        <div className="h-sub" style={{ marginTop: 2 }}>
+          {c.clazz} • <span style={{ color: '#7c3aed', fontWeight: 800 }}>Niv {c.level}</span>
+          {showAccountHint && <span className="account-pill">• Compte {acc}</span>}
+        </div>
+      </td>
+
+      {MONEY_COLS.map(col => {
+        const savedVal = Number(valueMapForChar?.[col.key] ?? 0)
+
+        return (
+          <td key={col.key} className="cell">
+            <input
+              className="money-input"
+              defaultValue={savedVal > 0 ? formatSpaces(savedVal) : ''}
+              inputMode="numeric"
+              onFocus={(e) => handleMoneyFocus(e, savedVal)}
+              onInput={handleMoneyInput}
+              onBlur={(e) => handleMoneyBlur(e, c.id, col.key)}
+              style={{ background: greenIfPositive(savedVal) }}
+              title={col.label}
+            />
+          </td>
+        )
+      })}
+    </tr>
+  )
+})
+
 export default function Monnaie() {
   const [rows, setRows] = useState([])
   const [prog, setProg] = useState([])
@@ -48,9 +124,7 @@ export default function Monnaie() {
   const [accountFilter, setAccountFilter] = useState('ALL')
   const [classFilter, setClassFilter] = useState('ALL')
 
-  // ✅ Draft = ce que tu tapes (digits only). Tant que draft existe => PAS de save.
-  const [draft, setDraft] = useState({})
-
+  // juste pour nettoyer à la sortie (si jamais)
   const timersRef = useRef(new Map())
 
   async function refresh() {
@@ -178,10 +252,13 @@ export default function Monnaie() {
     })
   }
 
-  async function saveMoney(character_id, key, value_int) {
+  async function commitMoney(character_id, key, value_int) {
     setSavingCount(x => x + 1)
     setErr(null)
     try {
+      // update UI après saisie
+      upsertLocal(character_id, key, value_int)
+
       await upsertProgress({
         character_id,
         category: 'monnaie',
@@ -197,7 +274,7 @@ export default function Monnaie() {
     }
   }
 
-  async function saveBank(account, value_int) {
+  async function commitBank(account, value_int) {
     setSavingCount(x => x + 1)
     setErr(null)
     try {
@@ -218,10 +295,6 @@ export default function Monnaie() {
     }
   }
 
-  function cellKey(characterId, colKey) {
-    return `${characterId}:${colKey}`
-  }
-
   const accountOptions = useMemo(() => ([
     { value: 'ALL', label: 'Tout' },
     { value: '1', label: 'Compte 1' },
@@ -236,95 +309,35 @@ export default function Monnaie() {
 
   if (loading) return <div className="container"><div className="h-sub">Chargement…</div></div>
 
-  const TableHeader = () => (
-    <thead>
-      <tr>
-        <th className="sticky-col sticky-head"></th>
-        {MONEY_COLS.map(col => (
-          <th key={col.key} className="icon-head" title={col.label}>
-            <img src={col.icon} alt={col.label} title={col.label} className="dofus-icon" loading="lazy" />
-          </th>
-        ))}
-      </tr>
-    </thead>
-  )
-
-  const Row = ({ c, showAccountHint }) => {
-    const acc = normalizeAccount(c.account)
-    const map = progMap?.[c.id] || {}
-
-    return (
-      <tr>
-        <td className="sticky-col sticky-cell">
-          <div style={{ fontWeight: 900 }}>{c.name}</div>
-          <div className="h-sub" style={{ marginTop: 2 }}>
-            {c.clazz} • <span style={{ color: '#7c3aed', fontWeight: 800 }}>Niv {c.level}</span>
-            {showAccountHint && <span className="account-pill">• Compte {acc}</span>}
-          </div>
-        </td>
-
-        {MONEY_COLS.map(col => {
-          const savedVal = Number(map[col.key] ?? 0)
-          const dk = cellKey(c.id, col.key)
-
-          const isEditing = draft[dk] !== undefined
-          const typedVal = isEditing ? parseDigitsToNumber(draft[dk]) : savedVal
-
-          const displayValue = isEditing
-            ? draft[dk] // digits only while typing
-            : (savedVal > 0 ? formatSpaces(savedVal) : '') // formatted only after blur
-
-          return (
-            <td key={col.key} className="cell">
-              <input
-                className="money-input"
-                value={displayValue}
-                inputMode="numeric"
-                onFocus={() => {
-                  if (draft[dk] === undefined) {
-                    setDraft(prev => ({ ...prev, [dk]: savedVal > 0 ? String(savedVal) : '' }))
-                  }
-                }}
-                onChange={(e) => {
-                  // ✅ AUCUN SAVE ici
-                  const digits = onlyDigits(e.target.value)
-                  setDraft(prev => ({ ...prev, [dk]: digits }))
-                }}
-                onBlur={async () => {
-                  // ✅ SEUL MOMENT où on sauve
-                  const digits = draft[dk] ?? ''
-                  const nextNum = digits ? Number(digits) : 0
-
-                  setDraft(prev => {
-                    const n = { ...prev }
-                    delete n[dk]
-                    return n
-                  })
-
-                  upsertLocal(c.id, col.key, nextNum)
-                  await saveMoney(c.id, col.key, nextNum)
-                }}
-                style={{ background: greenIfPositive(typedVal) }}
-                title={col.label}
-              />
-            </td>
-          )
-        })}
-      </tr>
-    )
-  }
-
   const BankModule = ({ account }) => {
     if (!/^\d+$/.test(String(account))) return null
     const savedVal = Number(bankMap[String(account)] || 0)
-    const dk = `BANK:${account}`
 
-    const isEditing = draft[dk] !== undefined
-    const typedVal = isEditing ? parseDigitsToNumber(draft[dk]) : savedVal
+    function onFocus(e) {
+      e.target.value = savedVal > 0 ? String(Math.trunc(savedVal)) : ''
+    }
+    function onInput(e) {
+      const digits = onlyDigits(e.target.value)
+      if (e.target.value !== digits) e.target.value = digits
+      e.target.style.background = digits && Number(digits) > 0 ? 'rgba(34,197,94,0.25)' : 'white'
+    }
+    async function onBlur(e) {
+      const nextNum = toNumberDigits(e.target.value)
+      e.target.value = nextNum > 0 ? `${formatSpaces(nextNum)} K` : ''
+      e.target.style.background = greenIfPositive(nextNum)
 
-    const displayValue = isEditing
-      ? draft[dk] // digits only while typing
-      : (savedVal > 0 ? `${formatSpaces(savedVal)} K` : '')
+      // update local direct pour total
+      setBanks(prev => {
+        const next = Array.isArray(prev) ? [...prev] : []
+        const idx = next.findIndex(x => String(x.account) === String(account))
+        const row = { account: String(account), value_int: nextNum }
+        if (idx >= 0) next[idx] = { ...next[idx], ...row }
+        else next.push(row)
+        return next
+      })
+
+      await commitBank(String(account), nextNum)
+    }
 
     return (
       <div className="bank-module">
@@ -332,42 +345,13 @@ export default function Monnaie() {
         <div className="bank-label">Banque :</div>
         <input
           className="bank-input"
-          value={displayValue}
+          defaultValue={savedVal > 0 ? `${formatSpaces(savedVal)} K` : ''}
           inputMode="numeric"
           placeholder="0 K"
-          onFocus={() => {
-            if (draft[dk] === undefined) {
-              setDraft(prev => ({ ...prev, [dk]: savedVal > 0 ? String(savedVal) : '' }))
-            }
-          }}
-          onChange={(e) => {
-            // ✅ AUCUN SAVE ici
-            const digits = onlyDigits(e.target.value)
-            setDraft(prev => ({ ...prev, [dk]: digits }))
-          }}
-          onBlur={async () => {
-            const digits = draft[dk] ?? ''
-            const nextNum = digits ? Number(digits) : 0
-
-            setDraft(prev => {
-              const n = { ...prev }
-              delete n[dk]
-              return n
-            })
-
-            // update local pour total direct après blur
-            setBanks(prev => {
-              const next = Array.isArray(prev) ? [...prev] : []
-              const idx = next.findIndex(x => String(x.account) === String(account))
-              const row = { account: String(account), value_int: nextNum }
-              if (idx >= 0) next[idx] = { ...next[idx], ...row }
-              else next.push(row)
-              return next
-            })
-
-            await saveBank(String(account), nextNum)
-          }}
-          style={{ background: greenIfPositive(typedVal) }}
+          onFocus={onFocus}
+          onInput={onInput}
+          onBlur={onBlur}
+          style={{ background: greenIfPositive(savedVal) }}
           title={`Banque Compte ${account}`}
         />
       </div>
@@ -491,7 +475,15 @@ export default function Monnaie() {
             <table className="progress-table">
               <TableHeader />
               <tbody>
-                {resultsList.map(c => <Row key={c.id} c={c} showAccountHint />)}
+                {resultsList.map(c => (
+                  <MoneyRow
+                    key={c.id}
+                    c={c}
+                    showAccountHint
+                    valueMapForChar={progMap?.[c.id] || {}}
+                    onCommitMoney={commitMoney}
+                  />
+                ))}
                 {resultsList.length === 0 && (
                   <tr>
                     <td colSpan={MONEY_COLS.length + 1} className="h-sub" style={{ padding: 6 }}>
@@ -518,7 +510,15 @@ export default function Monnaie() {
               <table className="progress-table">
                 <TableHeader />
                 <tbody>
-                  {(grouped.map[acc] || []).map(c => <Row key={c.id} c={c} showAccountHint={false} />)}
+                  {(grouped.map[acc] || []).map(c => (
+                    <MoneyRow
+                      key={c.id}
+                      c={c}
+                      showAccountHint={false}
+                      valueMapForChar={progMap?.[c.id] || {}}
+                      onCommitMoney={commitMoney}
+                    />
+                  ))}
                 </tbody>
               </table>
             </div>
