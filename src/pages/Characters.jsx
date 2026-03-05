@@ -3,12 +3,12 @@ import { Card, Segmented } from '../ui'
 import { listCharacters, listProgress, upsertProgress } from '../data'
 
 const STAT_COLS = [
-  { key: 'VITALITE', label: 'Vitalité', color: '#111827' },          // noir
-  { key: 'SAGESSE', label: 'Sagesse', color: '#7c3aed' },            // violet
-  { key: 'FORCE', label: 'Force', color: '#8b5a2b' },                // marron
-  { key: 'INTELLIGENCE', label: 'Intelligence', color: '#d04b4b' },  // rouge doux
-  { key: 'CHANCE', label: 'Chance', color: '#60a5fa' },              // bleu pâle
-  { key: 'AGILITE', label: 'Agilité', color: '#22c55e' },            // vert
+  { key: 'VITALITE', label: 'Vitalité', color: '#111827' },
+  { key: 'SAGESSE', label: 'Sagesse', color: '#7c3aed' },
+  { key: 'FORCE', label: 'Force', color: '#8b5a2b' },
+  { key: 'INTELLIGENCE', label: 'Intelligence', color: '#d04b4b' },
+  { key: 'CHANCE', label: 'Chance', color: '#60a5fa' },
+  { key: 'AGILITE', label: 'Agilité', color: '#22c55e' },
 ]
 
 const TRI_COLS = [
@@ -32,7 +32,6 @@ function isOk100(v) {
   return Number(v) === 100
 }
 
-// tri-state stocké en INT: 0 (vide) -> 1 (X) -> 2 (O) -> 0
 function nextTriInt(v) {
   const n = Number(v) || 0
   if (n === 0) return 1
@@ -49,8 +48,8 @@ function triLabel(v) {
 
 function triBg(v) {
   const n = Number(v) || 0
-  if (n === 1) return 'rgba(34,197,94,0.25)'   // vert clair
-  if (n === 2) return 'rgba(245,158,11,0.25)'  // ocre
+  if (n === 1) return 'rgba(34,197,94,0.25)'
+  if (n === 2) return 'rgba(245,158,11,0.25)'
   return 'white'
 }
 
@@ -62,8 +61,8 @@ export default function Characters() {
   const [err, setErr] = useState(null)
   const [savingCount, setSavingCount] = useState(0)
 
-  const [accountFilter, setAccountFilter] = useState('ALL') // ALL, 1..6
-  const [classFilter, setClassFilter] = useState('ALL')     // ALL or clazz
+  const [accountFilter, setAccountFilter] = useState('ALL')
+  const [classFilter, setClassFilter] = useState('ALL')
 
   const timersRef = useRef(new Map())
 
@@ -92,7 +91,6 @@ export default function Characters() {
     }
   }, [])
 
-  // Robuste : si jamais plusieurs lignes existent, on garde la plus récente (updated_at)
   const progMap = useMemo(() => {
     const m = {}
     for (const r of (prog || [])) {
@@ -213,7 +211,6 @@ export default function Characters() {
   return (
     <div className="persos-page container" style={{ maxWidth: 1750, width: 'calc(100% - 28px)' }}>
       <style>{`
-        /* Layout toolbar */
         .persos-toolbar{
           display:flex;
           gap:12px;
@@ -228,8 +225,6 @@ export default function Characters() {
           align-items:center;
           flex-wrap:wrap;
         }
-
-        /* Select */
         .persos-select{
           height:38px;
           border-radius:12px;
@@ -243,8 +238,6 @@ export default function Characters() {
           border-color: rgba(124,58,237,0.55);
           box-shadow: 0 0 0 4px rgba(124,58,237,0.12);
         }
-
-        /* Icons headers */
         .persos-head-icon{
           width:22px;
           height:22px;
@@ -252,14 +245,19 @@ export default function Characters() {
           filter: drop-shadow(0 1px 0 rgba(0,0,0,0.06));
         }
 
-        /* Compaction vertical (le point que tu as marqué en rouge) */
-        .persos-page .card.grid{ padding-bottom: 8px; }
-        .persos-page .progress-table td{
-          padding-top: 10px;
+        /* ✅ le FIX du “gros vide”: on annule le layout "grid" des cards sur cette page */
+        .persos-page .card.grid{
+          display: block !important;
           padding-bottom: 10px;
         }
 
-        /* Inputs / buttons compacts */
+        /* Compaction table */
+        .persos-page .table-wrap{ margin-top: 8px; }
+        .persos-page .progress-table td{
+          padding-top: 8px;
+          padding-bottom: 8px;
+        }
+
         .stat-input{
           width: 92px;
           height: 34px;
@@ -285,14 +283,9 @@ export default function Characters() {
         }
       `}</style>
 
-      {/* Toolbar haut : vignettes + filtre classe */}
       <div className="persos-toolbar">
         <div className="persos-toolbar-left">
-          <Segmented
-            options={accountOptions}
-            value={accountFilter}
-            onChange={setAccountFilter}
-          />
+          <Segmented options={accountOptions} value={accountFilter} onChange={setAccountFilter} />
 
           <select
             className="persos-select"
@@ -320,7 +313,7 @@ export default function Characters() {
 
       {grouped.keys.map(acc => (
         <Card key={acc} className="grid" style={{ marginBottom: 12 }}>
-          <div className="h-sub" style={{ fontWeight: 'bold' }}>
+          <div className="h-sub" style={{ fontWeight: 'bold', paddingTop: 4 }}>
             Compte {acc}
           </div>
 
