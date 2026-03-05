@@ -32,6 +32,7 @@ function isOk100(v) {
   return Number(v) === 100
 }
 
+// tri-state stocké en INT: 0 (vide) -> 1 (X) -> 2 (O) -> 0
 function nextTriInt(v) {
   const n = Number(v) || 0
   if (n === 0) return 1
@@ -61,8 +62,8 @@ export default function Characters() {
   const [err, setErr] = useState(null)
   const [savingCount, setSavingCount] = useState(0)
 
-  const [accountFilter, setAccountFilter] = useState('ALL')
-  const [classFilter, setClassFilter] = useState('ALL')
+  const [accountFilter, setAccountFilter] = useState('ALL') // ALL, 1..6
+  const [classFilter, setClassFilter] = useState('ALL')     // ALL or clazz
 
   const timersRef = useRef(new Map())
 
@@ -91,6 +92,7 @@ export default function Characters() {
     }
   }, [])
 
+  // Robuste : si plusieurs lignes existent, on garde la plus récente (updated_at)
   const progMap = useMemo(() => {
     const m = {}
     for (const r of (prog || [])) {
@@ -123,6 +125,7 @@ export default function Characters() {
     return Array.from(set).sort((a, b) => a.localeCompare(b, 'fr'))
   }, [rows])
 
+  // Filtrage global (compte + classe)
   const filteredRows = useMemo(() => {
     return (rows || []).filter(c => {
       const acc = normalizeAccount(c.account)
@@ -132,6 +135,7 @@ export default function Characters() {
     })
   }, [rows, accountFilter, classFilter])
 
+  // Grouping par compte (utilisé quand classFilter === ALL)
   const grouped = useMemo(() => {
     const map = {}
     for (const c of filteredRows) {
@@ -149,6 +153,19 @@ export default function Characters() {
 
     keys.forEach(k => map[k].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'fr')))
     return { map, keys }
+  }, [filteredRows])
+
+  // Liste "Résultats" (utilisée quand classFilter !== ALL)
+  const resultsList = useMemo(() => {
+    const list = [...(filteredRows || [])]
+    list.sort((a, b) => {
+      const aa = normalizeAccount(a.account)
+      const bb = normalizeAccount(b.account)
+      const cmpAcc = aa.localeCompare(bb, 'fr')
+      if (cmpAcc !== 0) return cmpAcc
+      return (a.name || '').localeCompare(b.name || '', 'fr')
+    })
+    return list
   }, [filteredRows])
 
   function upsertLocal(character_id, key, value_int) {
@@ -206,6 +223,8 @@ export default function Characters() {
     { value: '6', label: 'Compte 6' },
   ]), [])
 
+  const compactMode = classFilter !== 'ALL' // ✅ clé : 1 seule card
+
   if (loading) return <div className="container"><div className="h-sub">Chargement…</div></div>
 
   return (
@@ -245,18 +264,10 @@ export default function Characters() {
           filter: drop-shadow(0 1px 0 rgba(0,0,0,0.06));
         }
 
-        /* ✅ le FIX du “gros vide”: on annule le layout "grid" des cards sur cette page */
-        .persos-page .card.grid{
-          display: block !important;
-          padding-bottom: 10px;
-        }
-
-        /* Compaction table */
+        /* Compaction */
+        .persos-page .card.grid{ display:block !important; padding-bottom: 10px; }
         .persos-page .table-wrap{ margin-top: 8px; }
-        .persos-page .progress-table td{
-          padding-top: 8px;
-          padding-bottom: 8px;
-        }
+        .persos-page .progress-table td{ padding-top: 8px; padding-bottom: 8px; }
 
         .stat-input{
           width: 92px;
@@ -281,8 +292,15 @@ export default function Characters() {
           cursor: pointer;
           background: white;
         }
+
+        .account-pill {
+          color: rgba(0,0,0,0.45);
+          font-weight: 800;
+          margin-left: 8px;
+        }
       `}</style>
 
+      {/* Toolbar */}
       <div className="persos-toolbar">
         <div className="persos-toolbar-left">
           <Segmented options={accountOptions} value={accountFilter} onChange={setAccountFilter} />
@@ -311,10 +329,11 @@ export default function Characters() {
         </Card>
       )}
 
-      {grouped.keys.map(acc => (
-        <Card key={acc} className="grid" style={{ marginBottom: 12 }}>
+      {/* ✅ MODE RÉSULTATS : 1 seule card quand filtre classe != ALL */}
+      {compactMode ? (
+        <Card className="grid" style={{ marginBottom: 12 }}>
           <div className="h-sub" style={{ fontWeight: 'bold', paddingTop: 4 }}>
-            Compte {acc}
+            Résultats : {classFilter} ({resultsList.length})
           </div>
 
           <div className="table-wrap">
@@ -338,8 +357,9 @@ export default function Characters() {
               </thead>
 
               <tbody>
-                {(grouped.map[acc] || []).map(c => {
+                {resultsList.map(c => {
                   const stats = progMap?.[c.id] || {}
+                  const acc = normalizeAccount(c.account)
 
                   return (
                     <tr key={c.id}>
@@ -347,6 +367,7 @@ export default function Characters() {
                         <div style={{ fontWeight: 900 }}>{c.name}</div>
                         <div className="h-sub" style={{ marginTop: 2 }}>
                           {c.clazz} • <span style={{ color: '#7c3aed', fontWeight: 800 }}>Niv {c.level}</span>
+                          <span className="account-pill">• Compte {acc}</span>
                         </div>
                       </td>
 
@@ -401,10 +422,10 @@ export default function Characters() {
                   )
                 })}
 
-                {(grouped.map[acc] || []).length === 0 && (
+                {resultsList.length === 0 && (
                   <tr>
                     <td colSpan={STAT_COLS.length + 3} className="h-sub" style={{ padding: 6 }}>
-                      Aucun perso dans ce compte.
+                      Aucun perso ne correspond aux filtres.
                     </td>
                   </tr>
                 )}
@@ -412,12 +433,110 @@ export default function Characters() {
             </table>
           </div>
         </Card>
-      ))}
+      ) : (
+        /* MODE NORMAL : par comptes */
+        grouped.keys.map(acc => (
+          <Card key={acc} className="grid" style={{ marginBottom: 12 }}>
+            <div className="h-sub" style={{ fontWeight: 'bold', paddingTop: 4 }}>
+              Compte {acc}
+            </div>
 
-      {grouped.keys.length === 0 && (
-        <Card className="grid">
-          <div className="h-sub">Aucun perso ne correspond aux filtres.</div>
-        </Card>
+            <div className="table-wrap">
+              <table className="progress-table">
+                <thead>
+                  <tr>
+                    <th className="sticky-col sticky-head">Perso</th>
+
+                    {STAT_COLS.map(c => (
+                      <th key={c.key}>
+                        <span style={{ color: c.color, fontWeight: 900 }}>{c.label}</span>
+                      </th>
+                    ))}
+
+                    {TRI_COLS.map(t => (
+                      <th key={t.key} title={t.title}>
+                        <img className="persos-head-icon" src={t.icon} alt={t.title} title={t.title} />
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {(grouped.map[acc] || []).map(c => {
+                    const stats = progMap?.[c.id] || {}
+
+                    return (
+                      <tr key={c.id}>
+                        <td className="sticky-col sticky-cell">
+                          <div style={{ fontWeight: 900 }}>{c.name}</div>
+                          <div className="h-sub" style={{ marginTop: 2 }}>
+                            {c.clazz} • <span style={{ color: '#7c3aed', fontWeight: 800 }}>Niv {c.level}</span>
+                          </div>
+                        </td>
+
+                        {STAT_COLS.map(col => {
+                          const val = stats[col.key]
+                          const display = val === null || val === undefined || val === 0 ? '' : String(val)
+                          const ok = isOk100(val)
+
+                          return (
+                            <td key={col.key} className="cell">
+                              <input
+                                className="stat-input"
+                                value={display}
+                                inputMode="numeric"
+                                placeholder="0"
+                                onChange={(e) => {
+                                  const next = clampNullableInt(e.target.value)
+                                  upsertLocal(c.id, col.key, next)
+                                  saveDebounced(c.id, col.key, next)
+                                }}
+                                onBlur={(e) => {
+                                  const next = clampNullableInt(e.target.value)
+                                  saveNow(c.id, col.key, next)
+                                }}
+                                style={{ background: ok ? 'rgba(34,197,94,0.25)' : 'white' }}
+                              />
+                            </td>
+                          )
+                        })}
+
+                        {TRI_COLS.map(t => {
+                          const v = stats[t.key] ?? 0
+                          return (
+                            <td key={t.key} className="cell">
+                              <button
+                                type="button"
+                                className="tri-btn"
+                                onClick={() => {
+                                  const next = nextTriInt(v)
+                                  upsertLocal(c.id, t.key, next)
+                                  saveNow(c.id, t.key, next)
+                                }}
+                                style={{ background: triBg(v) }}
+                                title="Vide → X → O"
+                              >
+                                {triLabel(v)}
+                              </button>
+                            </td>
+                          )
+                        })}
+                      </tr>
+                    )
+                  })}
+
+                  {(grouped.map[acc] || []).length === 0 && (
+                    <tr>
+                      <td colSpan={STAT_COLS.length + 3} className="h-sub" style={{ padding: 6 }}>
+                        Aucun perso dans ce compte.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        ))
       )}
     </div>
   )
