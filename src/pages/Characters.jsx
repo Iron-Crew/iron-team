@@ -1,14 +1,14 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { Card } from '../ui'
 import { listCharacters, listProgress, upsertProgress } from '../data'
 
 const STAT_COLS = [
-  { key: 'VITALITE', label: 'Vitalité' },
-  { key: 'SAGESSE', label: 'Sagesse' },
-  { key: 'FORCE', label: 'Force' },
-  { key: 'INTELLIGENCE', label: 'Intelligence' },
-  { key: 'CHANCE', label: 'Chance' },
-  { key: 'AGILITE', label: 'Agilité' },
+  { key: 'VITALITE', label: 'Vitalité', color: '#111827' },      // noir
+  { key: 'SAGESSE', label: 'Sagesse', color: '#7c3aed' },        // violet
+  { key: 'FORCE', label: 'Force', color: '#8b5a2b' },            // marron
+  { key: 'INTELLIGENCE', label: 'Intelligence', color: '#d04b4b' }, // rouge doux
+  { key: 'CHANCE', label: 'Chance', color: '#60a5fa' },          // bleu pâle
+  { key: 'AGILITE', label: 'Agilité', color: '#22c55e' },         // vert
 ]
 
 function normalizeAccount(a) {
@@ -16,7 +16,6 @@ function normalizeAccount(a) {
   return s || 'Sans compte'
 }
 
-// input -> int | null
 function clampNullableInt(v) {
   if (v === '' || v === null || v === undefined) return null
   const n = Number(v)
@@ -45,8 +44,8 @@ function triLabel(v) {
 
 function triBg(v) {
   const n = Number(v) || 0
-  if (n === 1) return 'rgba(34,197,94,0.25)' // vert clair
-  if (n === 2) return 'rgba(245,158,11,0.25)' // ocre
+  if (n === 1) return 'rgba(34,197,94,0.25)'   // vert clair
+  if (n === 2) return 'rgba(245,158,11,0.25)'  // ocre
   return 'white'
 }
 
@@ -55,8 +54,7 @@ export default function Characters() {
   const [prog, setProg] = useState([]) // état local immédiat
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState(null)
-
-  const timersRef = useRef(new Map()) // debounce par cellule
+  const [saving, setSaving] = useState(false)
 
   async function refresh() {
     setLoading(true)
@@ -72,14 +70,7 @@ export default function Characters() {
     }
   }
 
-  useEffect(() => {
-    refresh()
-    // cleanup debounce
-    return () => {
-      for (const t of timersRef.current.values()) clearTimeout(t)
-      timersRef.current.clear()
-    }
-  }, [])
+  useEffect(() => { refresh() }, [])
 
   const progMap = useMemo(() => {
     const m = {}
@@ -99,14 +90,11 @@ export default function Characters() {
     }
 
     const keys = []
-    // si tu utilises des comptes 1..6, on les sort en premier si présents
     for (let i = 1; i <= 8; i++) if (map[String(i)]?.length) keys.push(String(i))
     if (map['Sans compte']?.length) keys.push('Sans compte')
-
     for (const k of Object.keys(map).sort((a, b) => a.localeCompare(b, 'fr'))) {
       if (!keys.includes(k)) keys.push(k)
     }
-
     keys.forEach(k => map[k].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'fr')))
     return { map, keys }
   }, [rows])
@@ -124,38 +112,66 @@ export default function Characters() {
     })
   }
 
-  function saveDebounced(character_id, key, value_int) {
-    const timerKey = `${character_id}:${key}`
-    const prev = timersRef.current.get(timerKey)
-    if (prev) clearTimeout(prev)
-
-    const t = setTimeout(async () => {
-      timersRef.current.delete(timerKey)
-      try {
-        await upsertProgress({
-          character_id,
-          category: 'stats',
-          key,
-          status: 'done',
-          value_int: value_int ?? null,
-        })
-      } catch (e) {
-        console.error(e)
-        setErr(e.message)
-      }
-    }, 300)
-
-    timersRef.current.set(timerKey, t)
+  // Sauvegarde "réelle" en DB (et c’est ça qui garantit que F5 garde tout)
+  async function saveNow(character_id, key, value_int) {
+    setSaving(true)
+    setErr(null)
+    try {
+      await upsertProgress({
+        character_id,
+        category: 'stats',
+        key,
+        status: 'done',
+        value_int: value_int ?? null,
+      })
+    } catch (e) {
+      console.error(e)
+      setErr(e.message)
+    } finally {
+      setSaving(false)
+    }
   }
 
   if (loading) return <div className="container"><div className="h-sub">Chargement…</div></div>
 
   return (
-    <div className="container">
+    <div className="container" style={{ maxWidth: 1500, width: 'calc(100% - 40px)' }}>
+      {/* Styles locaux pour ne pas toucher à styles.css */}
+      <style>{`
+        .persos-head-icon{
+          width: 22px;
+          height: 22px;
+          vertical-align: middle;
+          filter: drop-shadow(0 1px 0 rgba(0,0,0,0.06));
+        }
+        .stat-input{
+          width: 86px;
+          height: 36px;
+          border-radius: 12px;
+          border: 1px solid rgba(0,0,0,0.10);
+          text-align: center;
+          font-weight: 900;
+          background: white;
+          outline: none;
+        }
+        .stat-input:focus{
+          border-color: rgba(124,58,237,0.55);
+          box-shadow: 0 0 0 4px rgba(124,58,237,0.12);
+        }
+        .tri-btn{
+          width: 66px;
+          height: 36px;
+          border-radius: 12px;
+          border: 1px solid rgba(0,0,0,0.10);
+          font-weight: 900;
+          cursor: pointer;
+        }
+      `}</style>
+
       <div className="header">
         <div>
           <div className="h-title">Persos</div>
-          <div className="h-sub">Stats + états Justicier/Parangon. Vert quand valeur = 100.</div>
+          <div className="h-sub">Stats + états Justicier/Parangon. Vert quand valeur = 100. {saving ? 'Sauvegarde…' : ''}</div>
         </div>
       </div>
 
@@ -176,11 +192,30 @@ export default function Characters() {
               <thead>
                 <tr>
                   <th className="sticky-col sticky-head">Perso</th>
+
                   {STAT_COLS.map(c => (
-                    <th key={c.key}>{c.label}</th>
+                    <th key={c.key}>
+                      <span style={{ color: c.color, fontWeight: 900 }}>{c.label}</span>
+                    </th>
                   ))}
-                  <th>Justiciers</th>
-                  <th>Parangon</th>
+
+                  <th title="Justiciers">
+                    <img
+                      className="persos-head-icon"
+                      src="/dofus-icons/justiciers.png"
+                      alt="Justiciers"
+                      title="Justiciers"
+                    />
+                  </th>
+
+                  <th title="Parangon">
+                    <img
+                      className="persos-head-icon"
+                      src="/dofus-icons/parangon.png"
+                      alt="Parangon"
+                      title="Parangon"
+                    />
+                  </th>
                 </tr>
               </thead>
 
@@ -205,22 +240,21 @@ export default function Characters() {
                         return (
                           <td key={col.key} className="cell">
                             <input
+                              className="stat-input"
                               value={display}
                               inputMode="numeric"
                               placeholder="0"
                               onChange={(e) => {
+                                // update local instant pour que tu puisses taper
                                 const next = clampNullableInt(e.target.value)
                                 upsertLocal(c.id, col.key, next)
-                                // on sauvegarde en debounce (comme ça tu peux taper normalement)
-                                saveDebounced(c.id, col.key, next)
+                              }}
+                              onBlur={(e) => {
+                                // save DB au blur => persistant au F5
+                                const next = clampNullableInt(e.target.value)
+                                saveNow(c.id, col.key, next)
                               }}
                               style={{
-                                width: 78,
-                                height: 34,
-                                borderRadius: 10,
-                                border: '1px solid rgba(0,0,0,0.10)',
-                                textAlign: 'center',
-                                fontWeight: 800,
                                 background: ok ? 'rgba(34,197,94,0.25)' : 'white',
                               }}
                             />
@@ -234,19 +268,14 @@ export default function Characters() {
                           <td key={key} className="cell">
                             <button
                               type="button"
+                              className="tri-btn"
                               onClick={() => {
                                 const next = nextTriInt(v)
-                                upsertLocal(c.id, key, next)
-                                saveDebounced(c.id, key, next)
+                                upsertLocal(c.id, key, next)   // instant UI
+                                saveNow(c.id, key, next)       // persistant
                               }}
                               style={{
-                                width: 60,
-                                height: 34,
-                                borderRadius: 10,
-                                border: '1px solid rgba(0,0,0,0.10)',
-                                fontWeight: 900,
                                 background: triBg(v),
-                                cursor: 'pointer',
                               }}
                               title="Vide → X → O"
                             >
