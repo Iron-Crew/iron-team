@@ -180,3 +180,37 @@ export async function deleteRow(table, id) {
   const { error } = await supabase.from(table).delete().eq('id', id)
   if (error) throw error
 }
+
+// =============================
+// ACCOUNT BANKS (Monnaie)
+// =============================
+
+export async function listAccountBanks() {
+  const user_id = await requireUserId()
+  const { data, error } = await supabase
+    .from('account_banks')
+    .select('id, account, value_int, updated_at')
+    .eq('user_id', user_id)
+
+  if (error) throw error
+  return data || []
+}
+
+export async function upsertAccountBank({ account, value_int = 0 }) {
+  const user_id = await requireUserId()
+
+  const payload = {
+    user_id,
+    account: String(account),
+    value_int: value_int ?? 0,
+  }
+
+  const { data, error } = await supabase
+    .from('account_banks')
+    .upsert(payload, { onConflict: 'user_id,account' })
+    .select()
+    .single()
+
+  if (error) throw error
+  return data
+}
