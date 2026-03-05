@@ -19,7 +19,7 @@ function onlyDigits(s) {
   return (s ?? '').toString().replace(/[^\d]/g, '')
 }
 
-function numOrZero(s) {
+function parseDigitsToNumber(s) {
   const d = onlyDigits(s)
   if (!d) return 0
   const n = Number(d)
@@ -48,8 +48,8 @@ export default function Monnaie() {
   const [accountFilter, setAccountFilter] = useState('ALL')
   const [classFilter, setClassFilter] = useState('ALL')
 
-  // Pour garder une saisie fluide (avec espaces) sans casser l’édition
-  const [draft, setDraft] = useState(() => ({})) // key -> string affichée
+  // Drafts = ce que l’utilisateur tape (non formaté), par input
+  const [draft, setDraft] = useState({})
 
   const timersRef = useRef(new Map())
 
@@ -205,7 +205,7 @@ export default function Monnaie() {
     const t = setTimeout(() => {
       timersRef.current.delete(timerKey)
       saveNow(character_id, key, value_int)
-    }, 350)
+    }, 450)
 
     timersRef.current.set(timerKey, t)
   }
@@ -215,7 +215,6 @@ export default function Monnaie() {
     setErr(null)
     try {
       const saved = await upsertAccountBank({ account, value_int: value_int ?? 0 })
-      // refresh local bank list
       setBanks(prev => {
         const next = Array.isArray(prev) ? [...prev] : []
         const idx = next.findIndex(x => String(x.account) === String(account))
@@ -240,12 +239,12 @@ export default function Monnaie() {
     const t = setTimeout(() => {
       timersRef.current.delete(timerKey)
       saveBankNow(account, value_int)
-    }, 350)
+    }, 450)
 
     timersRef.current.set(timerKey, t)
   }
 
-  function cellDraftKey(characterId, colKey) {
+  function cellKey(characterId, colKey) {
     return `${characterId}:${colKey}`
   }
 
@@ -292,39 +291,39 @@ export default function Monnaie() {
 
         {MONEY_COLS.map(col => {
           const v = Number(map[col.key] ?? 0)
-          const dk = cellDraftKey(c.id, col.key)
-          const shown = (draft[dk] ?? (v > 0 ? formatSpaces(v) : ''))
+          const dk = cellKey(c.id, col.key)
+
+          // Affichage:
+          // - si l’utilisateur est en train de taper => draft (digits only)
+          // - sinon => valeur formatée (espaces)
+          const displayValue =
+            draft[dk] !== undefined
+              ? draft[dk]
+              : (v > 0 ? formatSpaces(v) : '')
 
           return (
             <td key={col.key} className="cell">
               <input
                 className="money-input"
-                value={shown}
+                value={displayValue}
                 inputMode="numeric"
-                placeholder=""
                 onChange={(e) => {
-                  const raw = e.target.value
-                  const digits = onlyDigits(raw)
+                  const digits = onlyDigits(e.target.value)
+                  setDraft(prev => ({ ...prev, [dk]: digits }))
                   const nextNum = digits ? Number(digits) : 0
-
-                  // Affichage avec séparateurs
-                  const formatted = digits ? formatSpaces(nextNum) : ''
-                  setDraft(prev => ({ ...prev, [dk]: formatted }))
-
                   upsertLocal(c.id, col.key, nextNum)
                   saveDebounced(c.id, col.key, nextNum)
                 }}
                 onBlur={() => {
-                  // nettoyage draft si 0
-                  const current = numOrZero(draft[dk])
-                  if (!current) {
-                    setDraft(prev => {
-                      const n = { ...prev }
-                      delete n[dk]
-                      return n
-                    })
-                  }
-                  saveNow(c.id, col.key, current)
+                  const digits = draft[dk] ?? ''
+                  const nextNum = digits ? Number(digits) : 0
+                  // on enlève le draft pour repasser en affichage formaté
+                  setDraft(prev => {
+                    const n = { ...prev }
+                    delete n[dk]
+                    return n
+                  })
+                  saveNow(c.id, col.key, nextNum)
                 }}
                 style={{ background: greenIfPositive(v) }}
                 title={col.label}
@@ -337,10 +336,14 @@ export default function Monnaie() {
   }
 
   const BankModule = ({ account }) => {
-    if (!/^\d+$/.test(String(account))) return null // seulement 1..6
+    if (!/^\d+$/.test(String(account))) return null
     const v = Number(bankMap[String(account)] || 0)
     const dk = `BANK:${account}`
-    const shown = (draft[dk] ?? (v > 0 ? `${formatSpaces(v)} K` : ''))
+
+    const displayValue =
+      draft[dk] !== undefined
+        ? draft[dk]
+        : (v > 0 ? `${formatSpaces(v)} K` : '')
 
     return (
       <div className="bank-module">
@@ -348,16 +351,17 @@ export default function Monnaie() {
         <div className="bank-label">Banque :</div>
         <input
           className="bank-input"
-          value={shown}
+          value={displayValue}
           inputMode="numeric"
           placeholder="0 K"
           onChange={(e) => {
             const digits = onlyDigits(e.target.value)
+            // ici on garde le "K" seulement en affichage, pas dans le draft
+            setDraft(prev => ({ ...prev, [dk]: digits ? `${digits}` : '' }))
+
             const nextNum = digits ? Number(digits) : 0
-            const formatted = digits ? `${formatSpaces(nextNum)} K` : ''
-            setDraft(prev => ({ ...prev, [dk]: formatted }))
-            saveBankDebounced(String(account), nextNum)
-            // update local immediately for UI
+
+            // update UI locale pour que Total se mette à jour direct
             setBanks(prev => {
               const next = Array.isArray(prev) ? [...prev] : []
               const idx = next.findIndex(x => String(x.account) === String(account))
@@ -366,17 +370,18 @@ export default function Monnaie() {
               else next.push(row)
               return next
             })
+
+            saveBankDebounced(String(account), nextNum)
           }}
           onBlur={() => {
-            const current = numOrZero(draft[dk])
-            if (!current) {
-              setDraft(prev => {
-                const n = { ...prev }
-                delete n[dk]
-                return n
-              })
-            }
-            saveBankNow(String(account), current)
+            const digits = draft[dk] ?? ''
+            const nextNum = digits ? Number(onlyDigits(digits)) : 0
+            setDraft(prev => {
+              const n = { ...prev }
+              delete n[dk]
+              return n
+            })
+            saveBankNow(String(account), nextNum)
           }}
           title={`Banque Compte ${account}`}
         />
@@ -388,33 +393,15 @@ export default function Monnaie() {
     <div className="monnaie-page container" style={{ maxWidth: 1750, width: 'calc(100% - 28px)' }}>
       <style>{`
         .monnaie-toolbar{
-          display:flex;
-          gap:12px;
-          align-items:center;
-          justify-content:space-between;
-          flex-wrap:wrap;
-          margin-bottom:12px;
+          display:flex; gap:12px; align-items:center; justify-content:space-between;
+          flex-wrap:wrap; margin-bottom:12px;
         }
-        .monnaie-toolbar-left{
-          display:flex;
-          gap:12px;
-          align-items:center;
-          flex-wrap:wrap;
-        }
-        .monnaie-toolbar-right{
-          display:flex;
-          gap:12px;
-          align-items:center;
-          flex-wrap:wrap;
-        }
+        .monnaie-toolbar-left{ display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+        .monnaie-toolbar-right{ display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+
         .monnaie-select{
-          height:38px;
-          border-radius:12px;
-          border:1px solid rgba(0,0,0,0.10);
-          padding:0 12px;
-          font-weight:800;
-          background:white;
-          outline:none;
+          height:38px; border-radius:12px; border:1px solid rgba(0,0,0,0.10);
+          padding:0 12px; font-weight:800; background:white; outline:none;
         }
         .monnaie-select:focus{
           border-color: rgba(124,58,237,0.55);
@@ -426,7 +413,7 @@ export default function Monnaie() {
         .monnaie-page .progress-table td{ padding-top: 8px; padding-bottom: 8px; }
 
         .money-input{
-          width: 112px;
+          width: 118px;
           height: 34px;
           border-radius: 12px;
           border: 1px solid rgba(0,0,0,0.10);
@@ -440,25 +427,16 @@ export default function Monnaie() {
           box-shadow: 0 0 0 4px rgba(124,58,237,0.12);
         }
 
-        .bank-module{
-          display:flex;
-          align-items:center;
-          gap:8px;
-          margin-left: 6px;
-        }
+        .bank-module{ display:flex; align-items:center; gap:8px; }
         .bank-icon{
-          width:18px;
-          height:18px;
-          object-fit:contain;
+          width:18px; height:18px; object-fit:contain;
           filter: drop-shadow(0 1px 0 rgba(0,0,0,0.06));
         }
         .bank-label{
-          font-size: 12px;
-          font-weight: 900;
-          color: rgba(0,0,0,0.55);
+          font-size: 12px; font-weight: 900; color: rgba(0,0,0,0.55);
         }
         .bank-input{
-          width: 170px;
+          width: 190px;
           height: 34px;
           border-radius: 12px;
           border: 1px solid rgba(0,0,0,0.10);
@@ -473,21 +451,16 @@ export default function Monnaie() {
         }
 
         .total-bank{
-          display:flex;
-          align-items:center;
-          gap:8px;
+          display:flex; align-items:center; gap:8px;
           border:1px solid rgba(0,0,0,0.10);
           background: white;
           border-radius: 14px;
           padding: 8px 10px;
           font-weight: 900;
         }
-        .total-bank .val{
-          color: rgba(0,0,0,0.75);
-        }
+        .total-bank .val{ color: rgba(0,0,0,0.75); }
       `}</style>
 
-      {/* Toolbar */}
       <div className="monnaie-toolbar">
         <div className="monnaie-toolbar-left">
           <Segmented options={accountOptions} value={accountFilter} onChange={setAccountFilter} />
@@ -499,9 +472,7 @@ export default function Monnaie() {
             title="Filtrer par classe"
           >
             <option value="ALL">Toutes classes</option>
-            {classes.map(cl => (
-              <option key={cl} value={cl}>{cl}</option>
-            ))}
+            {classes.map(cl => <option key={cl} value={cl}>{cl}</option>)}
           </select>
         </div>
 
@@ -524,7 +495,6 @@ export default function Monnaie() {
         </Card>
       )}
 
-      {/* Mode Résultats */}
       {compactMode ? (
         <Card className="grid" style={{ marginBottom: 12 }}>
           <div className="h-sub" style={{ fontWeight: 'bold', paddingTop: 4 }}>
